@@ -1,0 +1,10 @@
+QuestDM Launcher Log 
+Started on st 12. 02. 2025 17:04:01,47 
+ 
+[INFO] Starting QuestDM Launcher Script 
+ 
+[INFO] BASE_DIR: D:\Dokumenty\GitHub\QuestDM\QuestDM 
+[INFO] FRONTEND_DIR: D:\Dokumenty\GitHub\QuestDM\QuestDM\Frontend 
+[INFO] BACKEND_DIR: D:\Dokumenty\GitHub\QuestDM\QuestDM\Backend 
+ 
+ERROR: Frontend directory not found! (D:\Dokumenty\GitHub\QuestDM\QuestDM\Frontend) 

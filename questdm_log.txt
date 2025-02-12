@@ -1,0 +1,73 @@
+QuestDM Launcher Log 
+Started on st 12. 02. 2025 17:53:06,24 
+ 
+ 
+[INFO] BASE_DIR: D:\Dokumenty\GitHub\QuestDM\QuestDM 
+[INFO] REQ_FILE: D:\Dokumenty\GitHub\QuestDM\requirements.txt 
+ 
+[INFO] Found Frontend directory: D:\Dokumenty\GitHub\QuestDM\QuestDM\Frontend 
+[INFO] Found Backend directory: D:\Dokumenty\GitHub\QuestDM\QuestDM\Backend 
+[INFO] Changing directory to Backend: D:\Dokumenty\GitHub\QuestDM\QuestDM\Backend 
+[INFO] Running: call pip install -r "D:\Dokumenty\GitHub\QuestDM\requirements.txt" 
+Requirement already satisfied: flask in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from -r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 1)) (3.0.0)
+Requirement already satisfied: flask_cors in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from -r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 2)) (5.0.0)
+Requirement already satisfied: ollama in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from -r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 3)) (0.4.4)
+Requirement already satisfied: tinydb in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from -r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 4)) (4.8.2)
+Requirement already satisfied: waitress in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from -r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 5)) (3.0.2)
+Requirement already satisfied: Werkzeug>=3.0.0 in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from flask->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 1)) (3.0.1)
+Requirement already satisfied: Jinja2>=3.1.2 in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from flask->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 1)) (3.1.2)
+Requirement already satisfied: itsdangerous>=2.1.2 in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from flask->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 1)) (2.1.2)
+Requirement already satisfied: click>=8.1.3 in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from flask->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 1)) (8.1.3)
+Requirement already satisfied: blinker>=1.6.2 in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from flask->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 1)) (1.7.0)
+Requirement already satisfied: httpx<0.28.0,>=0.27.0 in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from ollama->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 3)) (0.27.2)
+Requirement already satisfied: pydantic<3.0.0,>=2.9.0 in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from ollama->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 3)) (2.10.4)
+Requirement already satisfied: colorama in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from click>=8.1.3->flask->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 1)) (0.4.6)
+Requirement already satisfied: anyio in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from httpx<0.28.0,>=0.27.0->ollama->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 3)) (3.7.0)
+Requirement already satisfied: certifi in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from httpx<0.28.0,>=0.27.0->ollama->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 3)) (2023.5.7)
+Requirement already satisfied: httpcore==1.* in c:\users\eletk\appdata\roaming\python\python310\site-packages (from httpx<0.28.0,>=0.27.0->ollama->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 3)) (1.0.7)
+Requirement already satisfied: idna in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from httpx<0.28.0,>=0.27.0->ollama->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 3)) (3.4)
+Requirement already satisfied: sniffio in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from httpx<0.28.0,>=0.27.0->ollama->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 3)) (1.3.0)
+Requirement already satisfied: h11<0.15,>=0.13 in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from httpcore==1.*->httpx<0.28.0,>=0.27.0->ollama->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 3)) (0.14.0)
+Requirement already satisfied: MarkupSafe>=2.0 in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from Jinja2>=3.1.2->flask->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 1)) (2.1.3)
+Requirement already satisfied: annotated-types>=0.6.0 in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from pydantic<3.0.0,>=2.9.0->ollama->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 3)) (0.7.0)
+Requirement already satisfied: pydantic-core==2.27.2 in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from pydantic<3.0.0,>=2.9.0->ollama->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 3)) (2.27.2)
+Requirement already satisfied: typing-extensions>=4.12.2 in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from pydantic<3.0.0,>=2.9.0->ollama->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 3)) (4.12.2)
+Requirement already satisfied: exceptiongroup in c:\users\eletk\appdata\local\programs\python\python310\lib\site-packages (from anyio->httpx<0.28.0,>=0.27.0->ollama->-r D:\Dokumenty\GitHub\QuestDM\requirements.txt (line 3)) (1.1.1)
+DEPRECATION: pytorch-lightning 1.7.7 has a non-standard dependency specifier torch>=1.9.*. pip 23.3 will enforce this behaviour change. A possible replacement is to upgrade to a newer version of pytorch-lightning or contact the author to suggest that they release a version with a conforming dependency specifiers. Discussion can be found at https://github.com/pypa/pip/issues/12063
+DEPRECATION: torchsde 0.2.5 has a non-standard dependency specifier numpy>=1.19.*; python_version >= "3.7". pip 23.3 will enforce this behaviour change. A possible replacement is to upgrade to a newer version of torchsde or contact the author to suggest that they release a version with a conforming dependency specifiers. Discussion can be found at https://github.com/pypa/pip/issues/12063
+
+[notice] A new release of pip is available: 23.2.1 -> 25.0.1
+[notice] To update, run: python.exe -m pip install --upgrade pip
+[INFO] Backend dependencies installed. 
+[INFO] Changing directory to Frontend: D:\Dokumenty\GitHub\QuestDM\QuestDM\Frontend 
+[INFO] Running: call npm install 
+
+up to date, audited 150 packages in 1s
+
+45 packages are looking for funding
+  run `npm fund` for details
+
+1 moderate severity vulnerability
+
+To address all issues, run:
+  npm audit fix
+
+Run `npm audit` for details.
+[INFO] Frontend dependencies installed. 
+[INFO] Running: call npm run build 
+
+> frontend@0.0.0 build
+> vite build
+
+[36mvite v6.0.4 [32mbuilding for production...[36m[39m
+transforming...
+[32m✓[39m 47 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mindex.html                     [39m[1m[2m  0.43 kB[22m[1m[22m[2m │ gzip:  0.28 kB[22m
+[2mdist/[22m[35massets/AboutView-CSIvawM9.css  [39m[1m[2m  0.09 kB[22m[1m[22m[2m │ gzip:  0.10 kB[22m
+[2mdist/[22m[35massets/index-B8pCoDN1.css      [39m[1m[2m  7.45 kB[22m[1m[22m[2m │ gzip:  1.92 kB[22m
+[2mdist/[22m[36massets/AboutView-KoRcWI3e.js   [39m[1m[2m  0.23 kB[22m[1m[22m[2m │ gzip:  0.21 kB[22m
+[2mdist/[22m[36massets/index-Bh2XycZ5.js       [39m[1m[2m109.45 kB[22m[1m[22m[2m │ gzip: 39.85 kB[22m
+[32m✓ built in 634ms[39m
+[INFO] Frontend production build completed. 
