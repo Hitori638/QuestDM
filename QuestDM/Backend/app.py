@@ -131,68 +131,96 @@ def merge_characters(existing_chars, new_chars):
     return merged_characters
 
 def summarize_and_save(story_name, llm_conv, threshold=10):
-    if len(llm_conv) <= 2:
+    """
+    Summarizes user/assistant messages from index 3 onward,
+    preserving the first three system messages in the conversation.
+    """
+
+    if len(llm_conv) <= 3:
         return llm_conv
-    user_messages_since_summary = 0
-    last_summary_index = -1
-    for i, msg in enumerate(llm_conv):
-        if msg["role"] == "assistant" and msg["content"].startswith("SUMMARY:"):
-            last_summary_index = i
-            user_messages_since_summary = 0
-        elif msg["role"] == "user":
-            user_messages_since_summary += 1
-    if user_messages_since_summary >= threshold:
-        chunk_to_summarize = llm_conv[last_summary_index + 1 :]
-        conversation_text = "\n\n".join(f"{m['role'].upper()}: {m['content']}" for m in chunk_to_summarize)
-        summarization_prompt = construct_summary_prompt(conversation_text)
-        response_chunks = ollama.chat(
-            model=current_model,
-            messages=summarization_prompt,
-            stream=False,
+
+
+    new_user_msgs = [msg for msg in llm_conv[3:] if msg["role"] == "user"]
+    if len(new_user_msgs) < threshold:
+        return llm_conv
+
+
+    summary_exists = (
+        len(llm_conv) > 3
+        and llm_conv[3]["role"] == "assistant"
+        and llm_conv[3]["content"].startswith("SUMMARY:")
+    )
+
+
+    start_index = 4 if summary_exists else 3
+
+    base_summary = ""
+    if summary_exists:
+        base_summary = llm_conv[3]["content"].replace("SUMMARY:", "", 1).strip()
+
+
+    new_text = "\n\n".join(
+        f"{msg['role'].upper()}: {msg['content']}"
+        for msg in llm_conv[start_index:]
+    )
+
+
+    if base_summary:
+        conversation_text = f"SUMMARY: {base_summary}\n\n{new_text}"
+    else:
+        conversation_text = new_text
+
+
+    summarization_prompt = construct_summary_prompt(conversation_text)
+    response_chunks = ollama.chat(
+        model=current_model,
+        messages=summarization_prompt,
+        stream=False,
+    )
+    if hasattr(response_chunks, "message"):
+        response_accumulated = response_chunks.message.content
+    elif isinstance(response_chunks, dict):
+        response_accumulated = response_chunks.get("message", {}).get("content", "")
+    elif isinstance(response_chunks, (list, tuple)):
+        response_accumulated = "".join(
+            chunk.get("message", {}).get("content", "") for chunk in response_chunks if isinstance(chunk, dict)
         )
-        if hasattr(response_chunks, "message"):
-            response_accumulated = response_chunks.message.content
-        elif isinstance(response_chunks, dict):
-            response_accumulated = response_chunks.get("message", {}).get("content", "")
-        elif isinstance(response_chunks, (list, tuple)):
-            response_accumulated = "".join(
-                chunk.get("message", {}).get("content", "") for chunk in response_chunks if isinstance(chunk, dict)
-            )
+    else:
+        response_accumulated = ""
+
+    try:
+        if response_accumulated.strip().startswith("{"):
+            response_data = json.loads(response_accumulated)
         else:
-            response_accumulated = ""
-        if not response_accumulated.strip().startswith("{"):
             response_data = {"summary": response_accumulated.strip(), "character_creation": {}}
-        else:
-            try:
-                response_data = json.loads(response_accumulated)
-            except Exception as e:
-                response_data = {"summary": response_accumulated.strip(), "character_creation": {}}
-        new_summary = response_data.get("summary", "")
-        new_characters = response_data.get("character_creation", {})
-        story = story_creation_table.get(StoryQuery.name == story_name)
-        if story:
-            existing_conversation = story.get("conversation_history", [])
-            updated_conversation = merge_conversation(existing_conversation, llm_conv)
-            existing_characters = story.get("characters", {})
-            merged_characters = merge_characters(existing_characters, new_characters)
-            story_creation_table.update(
-                {
-                    "conversation_history": updated_conversation,
-                    "summary": new_summary,
-                    "characters": merged_characters,
-                },
-                StoryQuery.name == story_name,
-            )
-        summarized_message = {"role": "assistant", "content": f"SUMMARY: {new_summary}"}
-        if last_summary_index == -1:
-            if llm_conv and llm_conv[-1]["role"] == "assistant" and not llm_conv[-1]["content"].startswith("SUMMARY:"):
-                updated_llm_conv = llm_conv[:-1] + [summarized_message, llm_conv[-1]]
-            else:
-                updated_llm_conv = [summarized_message]
-        else:
-            updated_llm_conv = llm_conv[:last_summary_index + 1] + [summarized_message]
-        return updated_llm_conv
-    return llm_conv
+    except Exception:
+        response_data = {"summary": response_accumulated.strip(), "character_creation": {}}
+
+    new_summary = response_data.get("summary", "")
+    new_characters = response_data.get("character_creation", {})
+
+ 
+    story = story_creation_table.get(StoryQuery.name == story_name)
+    if story:
+        existing_conversation = story.get("conversation_history", [])
+        updated_conversation = merge_conversation(existing_conversation, llm_conv)
+        existing_characters = story.get("characters", {})
+        merged_characters = merge_characters(existing_characters, new_characters)
+        story_creation_table.update(
+            {
+                "conversation_history": updated_conversation,
+                "summary": new_summary,
+                "characters": merged_characters,
+            },
+            StoryQuery.name == story_name,
+        )
+
+
+    summarized_message = {"role": "assistant", "content": f"SUMMARY: {new_summary}"}
+    new_llm_conv = llm_conv[:3] + [summarized_message]
+    return new_llm_conv
+
+
 
 # -----------------------------
 # ROLE TRANSFORMATION FOR DISPLAY
@@ -217,42 +245,66 @@ def transform_conversation_for_display(conversation):
 def chat():
     data = request.get_json()
     story_name = data.get('story_name')
-    story_details = data.get('story_details')
     user_input = data.get('message')
     story = story_creation_table.get(StoryQuery.name == story_name)
     if not story:
         return jsonify({'error': f"Story '{story_name}' not found."}), 404
+
+
     if story['mode'] == 'dnd':
         initial_prompt = dnd_mode_prompt
     elif story['mode'] == 'novel':
         initial_prompt = novel_mode_prompt
     else:
         return jsonify({'error': 'Invalid story mode.'}), 400
+
     if not user_input:
         return jsonify({'error': 'No message provided.'}), 400
-    # Initialize system prompt and context if the conversation is missing or empty
+
+
     if story_name not in conversations or not conversations[story_name]:
-        context_message = {
+
+        mode_prompt = initial_prompt
+
+
+        story_details_prompt = {
             "role": "system",
             "content": (
-                "You are the Dungeon Master for this story. "
-                "The player controls the character described below. "
-                "Your job is to narrate the world and manage all NPCs, "
-                "while keeping the story immersive and interactive."
+                f"Story Details:\n"
+                f"Name: {story.get('name', 'Unknown')}\n"
+                f"Description: {story.get('description', 'No description')}\n"
+                f"Genre: {story.get('genre', 'N/A')}\n"
             )
         }
-        story_details_message = {
+
+
+        characters = story.get("characters", [])
+        character_details = "NPC Story Characters:\n"
+        for char in characters:
+            char_name = char.get("name", "Unknown")
+            char_race = char.get("race", "Unknown")
+            char_class = char.get("class", "Unknown")
+            char_backstory = char.get("backstory", "No backstory")
+            character_details += f"{char_name} (Race: {char_race}, Class: {char_class}): {char_backstory}\n"
+        character_prompt = {
             "role": "system",
-            "content": json.dumps(story_details)
+            "content": character_details
         }
-        conversations[story_name] = [initial_prompt, context_message, story_details_message]
-        llm_conversations[story_name] = [initial_prompt, context_message, story_details_message]
+
+
+        conversations[story_name] = [mode_prompt, story_details_prompt, character_prompt]
+        llm_conversations[story_name] = [mode_prompt, story_details_prompt, character_prompt]
+
+
     user_message = {"role": "user", "content": user_input}
     conversations[story_name].append(user_message)
     llm_conversations[story_name].append(user_message)
+
     try:
         def generate():
-            app.logger.debug(f"LLM Conversation for {story_name}:\n{json.dumps(llm_conversations[story_name], indent=2)}")
+            app.logger.debug(
+                f"LLM Conversation for {story_name}:\n{json.dumps(llm_conversations[story_name], indent=2)}"
+            )
             stream = ollama.chat(
                 model=current_model,
                 messages=llm_conversations[story_name],
@@ -280,17 +332,30 @@ def chat():
                         think_buffer = ""
                     continue
                 yield f"data: {json.dumps({'content': content})}\n\n"
+
             assistant_msg = {"role": "assistant", "content": response_accumulated}
             conversations[story_name].append(assistant_msg)
             llm_conversations[story_name].append(assistant_msg)
-            story_creation_table.update({"conversation_history": llm_conversations[story_name]}, StoryQuery.name == story_name)
+
+   
+            story_creation_table.update(
+                {"conversation_history": llm_conversations[story_name]},
+                StoryQuery.name == story_name
+            )
+
+ 
             def background_summary():
                 updated_conv = summarize_and_save(story_name, llm_conversations[story_name])
                 llm_conversations[story_name] = updated_conv
+
             threading.Thread(target=background_summary).start()
+
         return Response(generate(), mimetype='text/event-stream')
     except Exception as e:
         return jsonify({'error': f"An error occurred: {str(e)}"}), 500
+
+
+
 
 @app.route('/list_models', methods=['GET'])
 def list_models():
@@ -321,17 +386,28 @@ def create_story():
     description = data.get('description', '').strip()
     genre = data.get('genre', '').strip()
     mode = data.get('mode', '').strip()
-    characters = data.get('characters', [])
+
+    selected_characters = data.get('characters', [])
+    
     if not story_name or not description or not genre or not mode:
         return jsonify({'error': 'Story name, description, genre, and mode are required.'}), 400
+
+
+    character_copies = []
+    for char_name in selected_characters:
+        char = character_creation_table.get(StoryQuery.name == char_name)
+        if char:
+            character_copies.append(char)
+
     existing_story = story_creation_table.get(StoryQuery.name == story_name)
     if existing_story:
+ 
         story_creation_table.update(
             {
                 'description': description or existing_story.get('description'),
                 'genre': genre or existing_story.get('genre'),
                 'mode': mode or existing_story.get('mode'),
-                'characters': list(set(existing_story.get('characters', []) + characters))
+                'characters': character_copies
             },
             StoryQuery.name == story_name
         )
@@ -343,7 +419,7 @@ def create_story():
             'description': description,
             'genre': genre,
             'mode': mode,
-            'characters': characters,
+            'characters': character_copies,
             'conversation_history': [],
             'summary': ''
         }
@@ -351,6 +427,7 @@ def create_story():
         message = f"Story '{story_name}' created successfully!"
         updated_story = new_story
     return jsonify({'message': message, 'story': updated_story})
+
 
 @app.route('/load_story', methods=['POST'])
 def load_story():
@@ -407,14 +484,25 @@ def edit_story():
     story = story_creation_table.get(StoryQuery.name == original_name)
     if not story:
         return jsonify({'error': f"Story '{original_name}' not found."}), 404
+    
+
+    selected_characters = data.get('characters', [])
+    character_copies = []
+    for char_name in selected_characters:
+        char = character_creation_table.get(StoryQuery.name == char_name)
+        if char:
+            character_copies.append(char)
+    
     updated_data = {
         'name': data.get('name', story['name']),
         'description': data.get('description', story['description']),
         'genre': data.get('genre', story['genre']),
         'mode': data.get('mode', story['mode']),
+        'characters': character_copies
     }
     story_creation_table.update(updated_data, StoryQuery.name == original_name)
     return jsonify(updated_data)
+
 
 @app.route('/edit_character', methods=['PUT'])
 def edit_character():

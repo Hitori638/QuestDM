@@ -16,7 +16,11 @@
             <h2>Stories</h2>
             <ul>
               <li v-for="(story, index) in stories" :key="index">
-                <span @click="openStory(story)" class="story-title" :class="{ selected: selectedStory && selectedStory.name === story.name }">
+                <span
+                  @click="openStory(story)"
+                  class="story-title"
+                  :class="{ selected: selectedStory && selectedStory.name === story.name }"
+                >
                   {{ story.name }}
                 </span>
                 <button class="edit-btn" @click="openEditStoryModal(story)">✏️</button>
@@ -52,6 +56,7 @@
     </div>
 
     <!-- MODALS SECTION -->
+    <!-- Create Story Modal -->
     <div v-if="showCreateStoryModal" id="create-story-modal">
       <div class="modal-overlay" @click="closeModal"></div>
       <div class="modal-content">
@@ -75,10 +80,38 @@
             <option value="novel">Novel</option>
           </select>
         </label>
+
+        <!-- Character + Dropdown for Create Story -->
+        <div class="character-section">
+          <label>Characters:</label>
+          <div class="chips-container">
+ 
+            <span class="chip" v-for="(charName, idx) in newStory.characters" :key="idx">
+              {{ charName }}
+              <button class="remove-chip" @click="removeCharacterFromNewStory(charName)">✕</button>
+            </span>
+          </div>
+          <div class="add-character-row">
+            <select v-model="selectedCharacterToAddNew">
+              <option disabled value="">-- Select a character --</option>
+              <option 
+                v-for="char in availableCharactersForNew" 
+                :key="char.name" 
+                :value="char.name"
+              >
+                {{ char.name }}
+              </option>
+            </select>
+            <button @click="addCharacterToNewStory">Add</button>
+          </div>
+        </div>
+
         <button @click="saveStoryData">Save Story</button>
         <button @click="closeModal">Cancel</button>
       </div>
     </div>
+
+    <!-- Edit Story Modal -->
     <div v-if="showEditStoryModal" id="edit-story-modal">
       <div class="modal-overlay" @click="closeModal"></div>
       <div class="modal-content">
@@ -102,10 +135,38 @@
             <option value="novel">Novel</option>
           </select>
         </label>
+
+        <!-- Character + Dropdown for Edit Story -->
+        <div class="character-section">
+          <label>Characters:</label>
+          <div class="chips-container">
+
+            <span class="chip" v-for="(charName, idx) in editedStory.characters" :key="idx">
+              {{ charName }}
+              <button class="remove-chip" @click="removeCharacterFromEditedStory(charName)">✕</button>
+            </span>
+          </div>
+          <div class="add-character-row">
+            <select v-model="selectedCharacterToAddEdit">
+              <option disabled value="">-- Select a character --</option>
+              <option 
+                v-for="char in availableCharactersForEdit" 
+                :key="char.name" 
+                :value="char.name"
+              >
+                {{ char.name }}
+              </option>
+            </select>
+            <button @click="addCharacterToEditedStory">Add</button>
+          </div>
+        </div>
+
         <button @click="saveEditedStoryData">Save Changes</button>
         <button @click="closeModal">Cancel</button>
       </div>
     </div>
+
+    <!-- Create Character Modal -->
     <div v-if="showCreateCharacterModal" id="create-character-modal">
       <div class="modal-overlay" @click="closeModal"></div>
       <div class="modal-content">
@@ -127,6 +188,8 @@
         <button @click="closeModal">Cancel</button>
       </div>
     </div>
+
+    <!-- Edit Character Modal -->
     <div v-if="showEditCharacterModal" id="edit-character-modal">
       <div class="modal-overlay" @click="closeModal"></div>
       <div class="modal-content">
@@ -151,6 +214,8 @@
         <button @click="closeModal">Cancel</button>
       </div>
     </div>
+
+    <!-- Delete Confirmation Modal -->
     <div v-if="showDeleteConfirmModal" class="confirmation-modal">
       <div class="modal-overlay" @click="cancelDelete"></div>
       <div class="modal-content">
@@ -164,7 +229,8 @@
         <button @click="cancelDelete">Cancel</button>
       </div>
     </div>
-    <!-- NEW SETTINGS MODAL -->
+
+    <!-- Settings Modal -->
     <div v-if="showSettingsModal" id="settings-modal">
       <div class="modal-overlay" @click="closeSettingsModal"></div>
       <div class="modal-content">
@@ -197,22 +263,82 @@ export default {
       characters: [],
       selectedStory: null,
       conversation: [],
+
+
       showCreateStoryModal: false,
       showCreateCharacterModal: false,
       showEditStoryModal: false,
       showEditCharacterModal: false,
       showSettingsModal: false,
       showDeleteConfirmModal: false,
+
+
       deleteTarget: { type: '', item: null, index: null },
-      newStory: { name: '', description: '', genre: '', mode: '' },
+
+
+      newStory: { name: '', description: '', genre: '', mode: '', characters: [] },
+
+      selectedCharacterToAddNew: '',
+
+
       newCharacter: { name: '', race: '', class: '', backstory: '' },
-      editedStory: { name: '', description: '', genre: '', mode: '' },
-      editedCharacter: { name: '', race: '', class: '', backstory: '' },
+
+
+      editedStory: { name: '', description: '', genre: '', mode: '', characters: [], originalName: '' },
+
+      selectedCharacterToAddEdit: '',
+
+
+      editedCharacter: { name: '', race: '', class: '', backstory: '', originalName: '' },
+
       installedLLMs: [],
       currentLLM: '',
     };
   },
+  computed: {
+
+    availableCharactersForNew() {
+      return this.characters.filter(
+        (c) => !this.newStory.characters.includes(c.name)
+      );
+    },
+
+    availableCharactersForEdit() {
+      return this.characters.filter(
+        (c) => !this.editedStory.characters.includes(c.name)
+      );
+    },
+  },
   methods: {
+    // ----- Character Logic (NEW STORY) -----
+    addCharacterToNewStory() {
+      if (!this.selectedCharacterToAddNew) return;
+
+      this.newStory.characters.push(this.selectedCharacterToAddNew);
+
+      this.selectedCharacterToAddNew = '';
+    },
+    removeCharacterFromNewStory(charName) {
+      const index = this.newStory.characters.indexOf(charName);
+      if (index !== -1) {
+        this.newStory.characters.splice(index, 1);
+      }
+    },
+
+    // ----- Character Logic (EDIT STORY) -----
+    addCharacterToEditedStory() {
+      if (!this.selectedCharacterToAddEdit) return;
+      this.editedStory.characters.push(this.selectedCharacterToAddEdit);
+      this.selectedCharacterToAddEdit = '';
+    },
+    removeCharacterFromEditedStory(charName) {
+      const index = this.editedStory.characters.indexOf(charName);
+      if (index !== -1) {
+        this.editedStory.characters.splice(index, 1);
+      }
+    },
+
+    // ----- Data Fetching -----
     async fetchStories() {
       try {
         const response = await fetch('http://localhost:5000/get_stories');
@@ -231,14 +357,29 @@ export default {
         console.error('Error fetching characters:', error);
       }
     },
+
+    // ----- Story Modals -----
     openEditStoryModal(story) {
-      this.editedStory = { ...story, originalName: story.name };
+      this.editedStory = {
+        ...story,
+        originalName: story.name,
+      };
+
+      if (Array.isArray(this.editedStory.characters)) {
+        this.editedStory.characters = this.editedStory.characters.map((char) =>
+          typeof char === 'object' ? char.name : char
+        );
+      }
       this.showEditStoryModal = true;
     },
+
+    // ----- Character Modals -----
     openEditCharacterModal(character) {
       this.editedCharacter = { ...character, originalName: character.name };
       this.showEditCharacterModal = true;
     },
+
+    // ----- Story CRUD -----
     async saveEditedStoryData() {
       try {
         const response = await fetch('http://localhost:5000/edit_story', {
@@ -254,7 +395,10 @@ export default {
           if (index !== -1) {
             this.stories.splice(index, 1, updatedStory);
           }
-          if (this.selectedStory && this.selectedStory.name === this.editedStory.originalName) {
+          if (
+            this.selectedStory &&
+            this.selectedStory.name === this.editedStory.originalName
+          ) {
             this.selectedStory = updatedStory;
           }
           this.closeModal();
@@ -263,6 +407,45 @@ export default {
         }
       } catch (error) {
         console.error('Error editing story:', error);
+      }
+    },
+    async saveStoryData() {
+      try {
+        const response = await fetch('http://localhost:5000/create_story', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.newStory),
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to create story: ${response.statusText}`);
+        }
+        const data = await response.json();
+        if (!data.story) {
+          throw new Error('The created story object is missing in the response.');
+        }
+        this.stories.push(data.story);
+        this.closeModal();
+      } catch (error) {
+        console.error('Error creating story:', error);
+        alert(`An error occurred while creating the story: ${error.message}`);
+      }
+    },
+
+    // ----- Character CRUD -----
+    async saveCharacterData() {
+      try {
+        const response = await fetch('http://localhost:5000/create_character', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(this.newCharacter),
+        });
+        const data = await response.json();
+        if (data.character) {
+          this.characters.push(data.character);
+        }
+        this.closeModal();
+      } catch (error) {
+        console.error('Error creating character:', error);
       }
     },
     async saveEditedCharacterData() {
@@ -275,7 +458,7 @@ export default {
         if (response.ok) {
           const updatedCharacter = await response.json();
           const index = this.characters.findIndex(
-            (character) => character.name === this.editedCharacter.originalName
+            (c) => c.name === this.editedCharacter.originalName
           );
           if (index !== -1) {
             this.characters.splice(index, 1, updatedCharacter);
@@ -288,6 +471,8 @@ export default {
         console.error('Error editing character:', error);
       }
     },
+
+    // ----- Story Loading -----
     async openStory(story) {
       if (!story || !story.name) {
         console.error('Invalid story passed to openStory:', story);
@@ -321,41 +506,8 @@ export default {
         console.error('Error loading story:', error);
       }
     },
-    async saveStoryData() {
-      try {
-        const response = await fetch('http://localhost:5000/create_story', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(this.newStory),
-        });
-        if (!response.ok) {
-          throw new Error(`Failed to create story: ${response.statusText}`);
-        }
-        const data = await response.json();
-        if (!data.story) {
-          throw new Error('The created story object is missing in the response.');
-        }
-        this.stories.push(data.story);
-        this.closeModal();
-      } catch (error) {
-        console.error('Error creating story:', error);
-        alert(`An error occurred while creating the story: ${error.message}`);
-      }
-    },
-    async saveCharacterData() {
-      try {
-        const response = await fetch('http://localhost:5000/create_character', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(this.newCharacter),
-        });
-        const data = await response.json();
-        this.characters.push(data.character);
-        this.closeModal();
-      } catch (error) {
-        console.error('Error creating character:', error);
-      }
-    },
+
+    // ----- Deletion -----
     openDeleteConfirmation(item, index, type) {
       this.deleteTarget = { type, item, index };
       this.showDeleteConfirmModal = true;
@@ -370,7 +522,10 @@ export default {
           });
           if (response.ok) {
             this.stories.splice(this.deleteTarget.index, 1);
-            if (this.selectedStory && this.selectedStory.name === this.deleteTarget.item.name) {
+            if (
+              this.selectedStory &&
+              this.selectedStory.name === this.deleteTarget.item.name
+            ) {
               this.selectedStory = null;
             }
           }
@@ -394,16 +549,23 @@ export default {
       this.showDeleteConfirmModal = false;
       this.deleteTarget = { type: '', item: null, index: null };
     },
+
+    // ----- Modal Controls -----
     closeModal() {
       this.showCreateStoryModal = false;
       this.showCreateCharacterModal = false;
       this.showEditStoryModal = false;
       this.showEditCharacterModal = false;
       this.showDeleteConfirmModal = false;
-      this.newStory = { name: '', description: '', genre: '', mode: '' };
+
+
+      this.newStory = { name: '', description: '', genre: '', mode: '', characters: [] };
       this.newCharacter = { name: '', race: '', class: '', backstory: '' };
-      this.editedStory = { name: '', description: '', genre: '', mode: '' };
-      this.editedCharacter = { name: '', race: '', class: '', backstory: '' };
+      this.editedStory = { name: '', description: '', genre: '', mode: '', characters: [], originalName: '' };
+      this.editedCharacter = { name: '', race: '', class: '', backstory: '', originalName: '' };
+
+      this.selectedCharacterToAddNew = '';
+      this.selectedCharacterToAddEdit = '';
     },
     openSettingsModal() {
       this.fetchInstalledLLMs();
@@ -412,6 +574,8 @@ export default {
     closeSettingsModal() {
       this.showSettingsModal = false;
     },
+
+    // ----- LLMs -----
     async fetchInstalledLLMs() {
       try {
         const response = await fetch('http://localhost:5000/list_models');
@@ -450,177 +614,19 @@ export default {
   mounted() {
     this.fetchStories();
     this.fetchCharacters();
+
     fetch('http://localhost:5000/get_model')
-      .then(res => res.json())
-      .then(data => { this.currentLLM = data.model; })
-      .catch(err => console.error(err));
+      .then((res) => res.json())
+      .then((data) => {
+        this.currentLLM = data.model;
+      })
+      .catch((err) => console.error(err));
   },
 };
 </script>
 
 <style>
-.delete-btn {
-  background: none;
-  border: none;
-  color: #f55;
-  font-size: 18px;
-  cursor: pointer;
-  margin-left: 10px;
-  transition: color 0.3s ease;
-}
-.delete-btn:hover {
-  color: #d33;
-}
-.confirmation-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-.confirmation-modal .modal-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.7);
-  z-index: 999;
-}
-.confirmation-modal .modal-content {
-  position: relative;
-  background: #222;
-  color: white;
-  padding: 20px;
-  border-radius: 10px;
-  width: 300px;
-  text-align: center;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-  z-index: 1000;
-}
-.confirmation-modal button {
-  display: inline-block;
-  padding: 10px 20px;
-  margin: 10px;
-  border: none;
-  border-radius: 5px;
-  background-color: #555;
-  color: white;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-.confirmation-modal button:hover {
-  background-color: #777;
-}
-#create-story-modal,
-#edit-story-modal,
-#character-selection-modal,
-#create-character-modal,
-#edit-character-modal,
-#settings-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-.modal-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.7);
-}
-.modal-content {
-  position: relative;
-  background: #1c1c1c;
-  color: #fff;
-  padding: 20px;
-  border-radius: 12px;
-  max-width: 500px;
-  width: 90%;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
-  z-index: 1001;
-  animation: fadeIn 0.3s ease-in-out;
-  text-align: center;
-}
-.modal-content h2 {
-  font-size: 24px;
-  margin-bottom: 15px;
-  text-align: center;
-}
-.modal-content label {
-  display: block;
-  margin-bottom: 10px;
-  font-size: 16px;
-}
-.modal-content input[type="text"],
-.modal-content textarea,
-.modal-content input[type="file"] {
-  width: 100%;
-  padding: 10px;
-  margin-top: 5px;
-  margin-bottom: 15px;
-  border: 1px solid #555;
-  border-radius: 5px;
-  background-color: #333;
-  color: #fff;
-  font-size: 14px;
-  box-sizing: border-box;
-}
-.modal-content textarea {
-  resize: none;
-  height: 80px;
-}
-.modal-content button {
-  display: inline-block;
-  padding: 10px 15px;
-  margin: 10px 5px 0 0;
-  border: none;
-  border-radius: 5px;
-  background-color: #555;
-  color: white;
-  font-size: 14px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-.modal-content button:hover {
-  background-color: #777;
-}
-.modal-content button:last-child {
-  background-color: #333;
-}
-.modal-content button:last-child:hover {
-  background-color: #555;
-}
-.modal-content img {
-  width: 100px;
-  height: 100px;
-  border-radius: 10px;
-  margin-top: 10px;
-  display: block;
-  margin-left: auto;
-  margin-right: auto;
-}
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
+
 body {
   font-family: 'Lora', serif;
   background: linear-gradient(to bottom, #1c1c1c, #333);
@@ -707,6 +713,8 @@ header {
   flex-grow: 1;
   padding: 20px;
 }
+
+/* Conversation Area */
 #conversation {
   max-width: 800px;
   margin: 20px auto;
@@ -765,6 +773,8 @@ header {
 #input-area button:active {
   transform: scale(0.95);
 }
+
+/* Scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
 }
@@ -775,6 +785,153 @@ header {
 ::-webkit-scrollbar-thumb:hover {
   background: #888888;
 }
+
+/* Modals */
+#create-story-modal,
+#edit-story-modal,
+#character-selection-modal,
+#create-character-modal,
+#edit-character-modal,
+#settings-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+}
+.modal-content {
+  position: relative;
+  background: #1c1c1c;
+  color: #fff;
+  padding: 20px;
+  border-radius: 12px;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  z-index: 1001;
+  animation: fadeIn 0.3s ease-in-out;
+  text-align: center;
+}
+.modal-content h2 {
+  font-size: 24px;
+  margin-bottom: 15px;
+  text-align: center;
+}
+.modal-content label {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 16px;
+}
+.modal-content input[type="text"],
+.modal-content textarea,
+.modal-content select {
+  width: 100%;
+  padding: 10px;
+  margin-top: 5px;
+  margin-bottom: 15px;
+  border: 1px solid #555;
+  border-radius: 5px;
+  background-color: #333;
+  color: #fff;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.modal-content textarea {
+  resize: none;
+  height: 80px;
+}
+.modal-content button {
+  display: inline-block;
+  padding: 10px 15px;
+  margin: 10px 5px 0 0;
+  border: none;
+  border-radius: 5px;
+  background-color: #555;
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+.modal-content button:hover {
+  background-color: #777;
+}
+.modal-content button:last-child {
+  background-color: #333;
+}
+.modal-content button:last-child:hover {
+  background-color: #555;
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Confirmation Modal */
+.confirmation-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.confirmation-modal .modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 999;
+}
+.confirmation-modal .modal-content {
+  position: relative;
+  background: #222;
+  color: white;
+  padding: 20px;
+  border-radius: 10px;
+  width: 300px;
+  text-align: center;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+}
+.confirmation-modal button {
+  display: inline-block;
+  padding: 10px 20px;
+  margin: 10px;
+  border: none;
+  border-radius: 5px;
+  background-color: #555;
+  color: white;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+.confirmation-modal button:hover {
+  background-color: #777;
+}
+
+/* Settings Modal */
 #settings-modal .modal-content {
   background: #1c1c1c;
   border-radius: 12px;
@@ -819,5 +976,59 @@ header {
 }
 #settings-modal .modal-content .use-btn:hover {
   background: #06c;
+}
+
+/* Delete button styling */
+.delete-btn {
+  background: none;
+  border: none;
+  color: #f55;
+  font-size: 18px;
+  cursor: pointer;
+  margin-left: 10px;
+  transition: color 0.3s ease;
+}
+.delete-btn:hover {
+  color: #d33;
+}
+
+/* Character Chips */
+.character-section {
+  text-align: left;
+  margin-bottom: 20px;
+}
+.chips-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  background-color: #444;
+  color: #fff;
+  border-radius: 20px;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+.remove-chip {
+  background: none;
+  border: none;
+  color: #bbb;
+  margin-left: 8px;
+  cursor: pointer;
+  font-size: 16px;
+}
+.remove-chip:hover {
+  color: #fff;
+}
+.add-character-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.add-character-row select {
+  flex: 1;
 }
 </style>
