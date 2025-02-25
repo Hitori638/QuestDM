@@ -14,7 +14,8 @@
         @keyup.enter="sendMessage"
         placeholder="Your action..."
       />
-      <button @click="sendMessage">Send</button>
+
+      <button @click="sendMessage">{{ streaming ? 'Abort' : 'Send' }}</button>
       <button @click="saveStory">Save Story</button>
     </div>
     <div v-if="saving" class="popup-overlay">
@@ -42,16 +43,31 @@ export default {
     return {
       userInput: '',
       saving: false,
+      streaming: false,       
+      abortController: null,  
     };
   },
   methods: {
     async sendMessage() {
+      if (this.streaming) {
+        if (this.abortController) {
+          this.abortController.abort();
+          this.streaming = false;
+          console.log('Streaming aborted by user.');
+        }
+        return;
+      }
+      
       if (!this.userInput.trim()) return;
       const message = this.userInput.trim();
       this.conversation.push({ role: 'You', content: message });
       this.userInput = '';
       const dmMessage = { role: 'DM', content: '' };
       this.conversation.push(dmMessage);
+      
+      this.abortController = new AbortController();
+      this.streaming = true;
+      
       try {
         const response = await fetch('http://localhost:5000/chat', {
           method: 'POST',
@@ -61,6 +77,7 @@ export default {
             story_details: this.storySummary,
             message: message,
           }),
+          signal: this.abortController.signal,
         });
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
@@ -82,8 +99,15 @@ export default {
           }
         }
       } catch (error) {
-        dmMessage.content = 'Failed to receive a response. Please try again.';
-        this.conversation[this.conversation.length - 1] = dmMessage;
+        if (error.name === 'AbortError') {
+          console.log('Fetch aborted.');
+        } else {
+          dmMessage.content = 'Failed to receive a response. Please try again.';
+          this.conversation[this.conversation.length - 1] = dmMessage;
+        }
+      } finally {
+        this.streaming = false;
+        this.abortController = null;
       }
     },
     async saveStory() {
@@ -114,6 +138,7 @@ export default {
 </script>
 
 <style>
+
 body {
   font-family: 'Lora', serif;
   background: linear-gradient(to bottom, #d3d3d3, #b0b0b0);
