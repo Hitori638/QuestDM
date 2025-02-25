@@ -1,7 +1,8 @@
 <template>
   <div id="chatbox">
-    <h1>{{ storySummary.name }}</h1>
+    
     <div id="conversation">
+      <h1>{{ storySummary.name }}</h1>
       <div v-for="(message, index) in conversation" :key="index">
         <p>
           <strong>{{ message.role }}:</strong> {{ message.content }}
@@ -16,7 +17,6 @@
       />
 
       <button @click="sendMessage">{{ streaming ? 'Abort' : 'Send' }}</button>
-      <button @click="saveStory">Save Story</button>
     </div>
     <div v-if="saving" class="popup-overlay">
       <div class="popup-content">
@@ -137,34 +137,38 @@ export default {
 };
 </script>
 
-<style>
+<style scoped>
+
 
 body {
-  font-family: 'Lora', serif;
-  background: linear-gradient(to bottom, #d3d3d3, #b0b0b0);
-  color: #3c3c3c;
+  font-family: 'Lato', sans-serif; 
+
+  background-size: cover;
+  background-position: center;
+  color: #f5f5f5;
   margin: 0;
   padding: 0;
 }
 
+
 h1 {
   text-align: center;
-  font-family: 'Arial', sans-serif;
-  color: #4f4f4f;
+  font-family: 'Cinzel', serif; 
+  color: #d4af37; 
   margin-top: 20px;
-  text-shadow: 0 0 3px #a0a0a0;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.6);
 }
 
 #conversation {
-  max-width: 800px;
+  max-width: 1000px;
   margin: 20px auto;
   padding: 15px;
-  border: 2px solid #a8a8a8;
-  background: rgba(210, 210, 210, 0.95);
+  border: 2px solid #555;
+  background: #3E2723;
   border-radius: 10px;
-  box-shadow: 0 0 5px rgba(150, 150, 150, 0.6);
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.7);
   overflow-y: auto;
-  height: 400px;
+  height: 500px;
 }
 
 #conversation p {
@@ -175,16 +179,14 @@ h1 {
 }
 
 #conversation p strong {
-  color: #4f4f4f;
+  color: #d4af37;
 }
+
 
 #conversation p:nth-child(odd) {
-  background-color: rgba(190, 190, 190, 0.9);
+  background-color: #4E342E;
 }
 
-#conversation p:nth-child(even) {
-  background-color: rgba(220, 220, 220, 0.9);
-}
 
 #input-area {
   display: flex;
@@ -193,12 +195,12 @@ h1 {
 }
 
 #input-area input {
-  width: 400px;
+  width: 850px;
   padding: 10px;
-  border: 2px solid #a8a8a8;
+  border: 2px solid #555;
   border-radius: 5px;
-  background: #eaeaea;
-  color: #3c3c3c;
+  background: #4E342E;
+  color: #f5f5f5;
   font-size: 16px;
 }
 
@@ -207,15 +209,15 @@ h1 {
   margin-left: 10px;
   border: none;
   border-radius: 5px;
-  background: #7f7f7f;
-  color: #ffffff;
+  background: #8b4513; 
+  color: #fff;
   font-size: 16px;
   cursor: pointer;
   transition: background 0.3s, transform 0.2s;
 }
 
 #input-area button:hover {
-  background: #5f5f5f;
+  background: #a0522d;
   transform: scale(1.05);
 }
 
@@ -229,7 +231,7 @@ h1 {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.4);
+  background-color: rgba(0, 0, 0, 0.6);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -237,17 +239,18 @@ h1 {
 }
 
 .popup-content {
-  background: #fff;
+  background: #222;
   padding: 20px 40px;
   border-radius: 12px;
   text-align: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
+/* Spinner */
 .spinner {
   margin: 0 auto 10px;
-  border: 5px solid #f3f3f3;
-  border-top: 5px solid #555;
+  border: 5px solid #444;
+  border-top: 5px solid #d4af37;
   border-radius: 50%;
   width: 36px;
   height: 36px;
