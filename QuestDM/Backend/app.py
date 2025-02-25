@@ -10,7 +10,10 @@ app = Flask(__name__)
 CORS(app)
 app.debug = True
 
+
 current_model = "llama3.2-vision:latest"
+model_accuracy_threshold = 3     
+current_context_size = 4096      
 
 conversations = {}
 llm_conversations = {}
@@ -121,7 +124,11 @@ def merge_characters(existing_chars, new_chars):
             merged_characters[char_id] = new_char
     return merged_characters
 
-def summarize_and_save(story_name, llm_conv, threshold=3):
+def summarize_and_save(story_name, llm_conv, threshold=None):
+    # Use the global model_accuracy_threshold if no threshold is provided
+    if threshold is None:
+        threshold = model_accuracy_threshold
+
     if len(llm_conv) <= 3:
         return llm_conv
 
@@ -157,6 +164,7 @@ def summarize_and_save(story_name, llm_conv, threshold=3):
         model=current_model,
         messages=summarization_prompt,
         stream=False,
+        options={"num_ctx": current_context_size}  
     )
     if hasattr(response_chunks, "message"):
         response_accumulated = response_chunks.message.content
@@ -228,7 +236,6 @@ def chat():
     if not user_input:
         return jsonify({'error': 'No message provided.'}), 400
 
-
     story_details_prompt = {
         "role": "system",
         "content": (
@@ -241,7 +248,7 @@ def chat():
     characters = story.get("characters", [])
     if isinstance(characters, dict):
         characters = list(characters.values())
-    character_details = "NPC Story Characters:\n"
+    character_details = "Story Characters:\n"
     for char in characters:
         if isinstance(char, dict):
             details = f"{char.get('name', 'Unknown')} (Race: {char.get('race', 'Unknown')}, Class: {char.get('class', 'Unknown')})\n"
@@ -260,7 +267,6 @@ def chat():
         "content": character_details
     }
 
-
     if story_name in conversations and conversations[story_name]:
         conversations[story_name][1] = story_details_prompt
         conversations[story_name][2] = character_prompt
@@ -277,10 +283,10 @@ def chat():
     def generate():
         print("DEBUG: Starting stream for story:", story_name)
         stream = ollama.chat(
-            model=current_model,
-            messages=llm_conversations[story_name],
-            stream=True,
-        )
+        model=current_model,
+        messages=llm_conversations[story_name],
+        stream=True,
+        options={"num_ctx": current_context_size})
         response_accumulated = ""
         inside_think = False
         think_buffer = ""
@@ -323,7 +329,6 @@ def chat():
         except Exception as e:
             print("DEBUG: Exception in stream generator:", e)
         finally:
-
             if response_accumulated:
                 print("DEBUG: Saving partial response for story:", story_name)
                 assistant_msg = {"role": "assistant", "content": response_accumulated}
@@ -333,7 +338,6 @@ def chat():
                     {"conversation_history": conversations[story_name]},
                     StoryQuery.name == story_name
                 )
-
                 def background_summary():
                     updated_conv = summarize_and_save(story_name, llm_conversations[story_name])
                     llm_conversations[story_name] = updated_conv
@@ -343,7 +347,6 @@ def chat():
             print("DEBUG: Stream complete for story:", story_name)
 
     return Response(generate(), mimetype='text/event-stream')
-
 
 @app.route('/list_models', methods=['GET'])
 def list_models():
@@ -439,7 +442,6 @@ def create_character():
     if not new_character_name or not new_character_race or not new_character_class:
         return jsonify({'error': 'Character name, race, and class are required.'}), 400
 
-
     character_data = {
         'name': new_character_name,
         'race': new_character_race,
@@ -455,7 +457,6 @@ def create_character():
     for key in advanced_keys:
         if key in data:
             character_data[key] = data[key]
-
 
     existing_character = character_creation_table.search(StoryQuery.name == new_character_name)
     if existing_character:
@@ -495,7 +496,6 @@ def edit_story():
         if char_name in stored_characters:
             merged_characters[char_name] = stored_characters[char_name]
         else:
-    
             char = character_creation_table.get(StoryQuery.name == char_name)
             if char:
                 merged_characters[char_name] = char
@@ -567,7 +567,19 @@ def delete_story():
 
 @app.route('/get_model', methods=['GET'])
 def get_model():
+    all_models_response = ollama.list()
+    models = getattr(all_models_response, 'models', None)
+    if models is None or not isinstance(models, list) or len(models) == 0:
+        return jsonify({'error': 'No models found.'}), 500
+
+    model_names = [getattr(m, 'model', None) for m in models if getattr(m, 'model', None)]
+    global current_model
+    if current_model not in model_names:
+        current_model = model_names[0]
+        print(f"DEBUG: current_model not found; updated to {current_model}")
+
     return jsonify({'model': current_model})
+
 
 @app.route('/set_model', methods=['POST'])
 def set_model():
@@ -578,6 +590,33 @@ def set_model():
         return jsonify({'error': 'Model name is required.'}), 400
     current_model = model_name
     return jsonify({'message': f'Model updated to {model_name}', 'model': current_model}), 200
+
+
+@app.route('/update_settings', methods=['POST'])
+def update_settings():
+    global model_accuracy_threshold, current_context_size
+    data = request.get_json()
+    new_accuracy = data.get('model_accuracy')
+    new_context = data.get('context_size')
+    if new_accuracy is not None:
+        try:
+            new_accuracy = int(new_accuracy)
+            if new_accuracy < 3:
+                return jsonify({'error': 'Model accuracy must be at least 3.'}), 400
+            model_accuracy_threshold = new_accuracy
+        except ValueError:
+            return jsonify({'error': 'Invalid model accuracy value.'}), 400
+    if new_context is not None:
+        try:
+            new_context = int(new_context)
+            current_context_size = new_context
+        except ValueError:
+            return jsonify({'error': 'Invalid context size value.'}), 400
+    return jsonify({
+        'message': 'Settings updated successfully.',
+        'model_accuracy': model_accuracy_threshold,
+        'context_size': current_context_size
+    })
 
 if __name__ == "__main__":
     app.run(debug=True)

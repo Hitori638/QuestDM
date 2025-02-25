@@ -3,20 +3,16 @@
 
     <header>
       <h1>Welcome, Adventurer!</h1>
-
       <button class="dice-btn" @click="toggleDicePanel">🎲</button>
       <button class="settings-btn" @click="openSettingsModal">⚙️</button>
     </header>
 
-
     <div id="content">
-
       <aside id="sidebar">
         <div id="tabs">
           <button @click="currentTab = 'stories'">Your Stories</button>
           <button @click="currentTab = 'characters'">Your Characters</button>
         </div>
-
 
         <div v-if="currentTab === 'stories'">
           <div id="stories">
@@ -38,7 +34,6 @@
           </div>
         </div>
 
-    
         <div v-else-if="currentTab === 'characters'">
           <div id="characters">
             <h2>Characters</h2>
@@ -54,9 +49,9 @@
         </div>
       </aside>
 
-   
       <main id="main-content">
         <div v-if="!selectedStory">
+          <!-- Story not selected yet -->
         </div>
         <div v-else>
           <StoryComponent :storySummary="selectedStory" :conversation="conversation" />
@@ -65,45 +60,42 @@
     </div>
 
     <transition name="slide">
-    <div v-if="showDicePanel" id="dice-panel">
-      <button class="close-dice-btn" @click="toggleDicePanel">✖️</button>
-      <h2>Dice Roller</h2>
- 
-      <div class="preset-roll">
-        <h3>Preset Rolls</h3>
-        <label>
-          Modifier:
-          <input type="number" v-model.number="presetModifier" placeholder="0" />
-        </label>
-        <div class="dice-buttons">
-          <button @click="rollDice(4, presetModifier)">1d4</button>
-          <button @click="rollDice(6, presetModifier)">1d6</button>
-          <button @click="rollDice(8, presetModifier)">1d8</button>
-          <button @click="rollDice(10, presetModifier)">1d10</button>
-          <button @click="rollDice(12, presetModifier)">1d12</button>
-          <button @click="rollDice(20, presetModifier)">1d20</button>
-          <button @click="rollDice(100, presetModifier)">1d100</button>
+      <div v-if="showDicePanel" id="dice-panel">
+        <button class="close-dice-btn" @click="toggleDicePanel">✖️</button>
+        <h2>Dice Roller</h2>
+        <div class="preset-roll">
+          <h3>Preset Rolls</h3>
+          <label>
+            Modifier:
+            <input type="number" v-model.number="presetModifier" placeholder="0" />
+          </label>
+          <div class="dice-buttons">
+            <button @click="rollDice(4, presetModifier)">1d4</button>
+            <button @click="rollDice(6, presetModifier)">1d6</button>
+            <button @click="rollDice(8, presetModifier)">1d8</button>
+            <button @click="rollDice(10, presetModifier)">1d10</button>
+            <button @click="rollDice(12, presetModifier)">1d12</button>
+            <button @click="rollDice(20, presetModifier)">1d20</button>
+            <button @click="rollDice(100, presetModifier)">1d100</button>
+          </div>
+        </div>
+
+        <div class="custom-roll">
+          <h3>Custom Roll</h3>
+          <input type="text" v-model="customDiceNotation" placeholder="e.g. 1d20+2" />
+          <button @click="rollCustomDice">Roll</button>
+          <p class="error-message" v-if="customDiceError">{{ customDiceError }}</p>
+        </div>
+
+        <div class="dice-result" v-if="diceResult !== null">
+          <h3>Result:</h3>
+          <p>{{ diceResult }}</p>
         </div>
       </div>
+    </transition>
 
-  
-      <div class="custom-roll">
-        <h3>Custom Roll</h3>
-        <input type="text" v-model="customDiceNotation" placeholder="e.g. 1d20+2" />
-        <button @click="rollCustomDice">Roll</button>
-        <p class="error-message" v-if="customDiceError">{{ customDiceError }}</p>
-      </div>
-
-
-      <div class="dice-result" v-if="diceResult !== null">
-        <h3>Result:</h3>
-        <p>{{ diceResult }}</p>
-      </div>
-    </div>
-
-  </transition>
-
-<div v-if="showCreateStoryModal" id="create-story-modal">
+    <!-- Create Story Modal -->
+    <div v-if="showCreateStoryModal" id="create-story-modal">
       <div class="modal-overlay" @click="closeModal"></div>
       <div class="modal-content">
         <h2>Create a New Story</h2>
@@ -126,14 +118,13 @@
             <option value="novel">Novel</option>
           </select>
         </label>
-  
         <button @click="openManageCharactersModal('create')">Manage Characters</button>
         <button @click="saveStoryData">Save Story</button>
         <button @click="closeModal">Cancel</button>
       </div>
     </div>
 
-
+    <!-- Edit Story Modal -->
     <div v-if="showEditStoryModal" id="edit-story-modal">
       <div class="modal-overlay" @click="closeModal"></div>
       <div class="modal-content">
@@ -157,14 +148,13 @@
             <option value="novel">Novel</option>
           </select>
         </label>
- 
         <button @click="openManageCharactersModal('edit')">Manage Characters</button>
         <button @click="saveEditedStoryData">Save Changes</button>
         <button @click="closeModal">Cancel</button>
       </div>
     </div>
 
-
+    <!-- Manage Characters Modal -->
     <div v-if="showManageCharactersModal" id="manage-characters-modal">
       <div class="modal-overlay" @click="closeManageCharactersModal"></div>
       <div class="modal-content manage-characters-modal-content">
@@ -172,7 +162,6 @@
           Manage Characters for
           {{ manageCharactersMode === 'edit' ? editedStory.name : newStory.name }}
         </h2>
-
         <section class="assigned-characters">
           <h3>Assigned Characters</h3>
           <div v-if="tempAssignedCharacters.length === 0">
@@ -201,7 +190,6 @@
           <div class="tabs">
             <button :class="{ active: activeTab === 'user' }" @click="activeTab = 'user'">User</button>
           </div>
-
           <div v-if="activeTab === 'user'" class="tab-content">
             <ul v-if="availableUserCharacters.length > 0">
               <li
@@ -217,7 +205,6 @@
             </ul>
             <p v-else>No user-created characters available.</p>
           </div>
-
           <div v-else-if="activeTab === 'llm'" class="tab-content">
             <ul v-if="availableLLMCharacters.length > 0">
               <li v-for="char in availableLLMCharacters" :key="char.name" class="character-card">
@@ -235,7 +222,7 @@
       </div>
     </div>
 
-
+    <!-- Create Character Modal -->
     <div v-if="showCreateCharacterModal" id="create-character-modal">
       <div class="modal-overlay" @click="closeModal"></div>
       <div class="modal-content">
@@ -256,7 +243,6 @@
         <button @click="toggleAdvancedOptions('create')">
           {{ showAdvancedOptionsCreateCharacter ? 'Hide Advanced Options' : 'Show Advanced Options' }}
         </button>
-
         <div v-if="showAdvancedOptionsCreateCharacter" class="advanced-options">
           <div class="tooltip">
             <p>
@@ -312,7 +298,7 @@
       </div>
     </div>
 
-
+    <!-- Edit Character Modal -->
     <div v-if="showEditCharacterModal" id="edit-character-modal">
       <div class="modal-overlay" @click="closeModal"></div>
       <div class="modal-content">
@@ -336,7 +322,6 @@
         <button @click="toggleAdvancedOptions('edit')">
           {{ showAdvancedOptionsEditCharacter ? 'Hide Advanced Options' : 'Show Advanced Options' }}
         </button>
-
         <div v-if="showAdvancedOptionsEditCharacter" class="advanced-options">
           <div class="tooltip">
             <p>
@@ -392,7 +377,7 @@
       </div>
     </div>
 
-
+    <!-- Delete Confirmation Modal -->
     <div v-if="showDeleteConfirmModal" class="confirmation-modal">
       <div class="modal-overlay" @click="cancelDelete"></div>
       <div class="modal-content">
@@ -407,28 +392,56 @@
       </div>
     </div>
 
-
+    <!-- New Tabbed Settings Modal -->
     <div v-if="showSettingsModal" id="settings-modal">
       <div class="modal-overlay" @click="closeSettingsModal"></div>
       <div class="modal-content">
-        <h2>Settings</h2>
-        <p>Select the LLM you wish to use:</p>
-        <ul>
-          <li
-            v-for="(model, index) in installedLLMs"
-            :key="index"
-            :class="{ active: model.model_name === currentLLM }"
-          >
-            <div class="model-info">
-              <strong>{{ model.model_name }}</strong>
-              <p>Parameter Size: {{ model.parameter_size }}</p>
+        <!-- Tab header -->
+        <div class="tabs">
+          <button :class="{ active: settingsActiveTab === 'llms' }" @click="settingsActiveTab = 'llms'">LLMs</button>
+          <button :class="{ active: settingsActiveTab === 'settings' }" @click="settingsActiveTab = 'settings'">Settings</button>
+        </div>
+        <!-- LLMs Tab -->
+        <div v-if="settingsActiveTab === 'llms'">
+          <h2>LLMs</h2>
+          <ul>
+            <li v-for="(model, index) in installedLLMs" :key="index" :class="{ active: model.model_name === currentLLM }">
+              <div class="model-info">
+                <strong>{{ model.model_name }}</strong>
+                <p>Parameter Size: {{ model.parameter_size }}</p>
+              </div>
+              <button class="use-btn" @click="useLLM(model.model_name)">USE LLM</button>
+            </li>
+          </ul>
+        </div>
+        <!-- Settings Tab -->
+        <div v-else-if="settingsActiveTab === 'settings'">
+          <h2>Settings</h2>
+          <div class="setting-item">
+            <label>
+              Model Accuracy:
+              <input type="range" min="3" max="20" step="1" v-model.number="modelAccuracy" />
+              <span>{{ modelAccuracy }}</span>
+            </label>
+            <div class="tooltip">
+              Adjust the summarization threshold. Lower values (e.g. 3) trigger more frequent summarization (helpful on lower‐end PCs), while higher values (e.g. 10 or more) reduce summarization frequency for higher‐end systems.
             </div>
-            <button class="use-btn" @click="useLLM(model.model_name)">USE LLM</button>
-          </li>
-        </ul>
+          </div>
+          <div class="setting-item">
+            <label>
+              Context Size:
+              <input type="number" min="0" v-model.number="contextSize" placeholder="4096" />
+            </label>
+            <div class="tooltip">
+              Set the context size for the model. Default is 4096. Increase this if your model supports larger context windows. Recommended: 4096 for standard usage; higher values for more context.
+            </div>
+          </div>
+          <button @click="saveSettings">Save Settings</button>
+        </div>
         <button @click="closeSettingsModal">Close</button>
       </div>
     </div>
+
   </div>
 </template>
 
@@ -446,32 +459,25 @@ export default {
       conversation: [],
       customDiceError: '',
 
-
       showCreateStoryModal: false,
       showEditStoryModal: false,
-
 
       showCreateCharacterModal: false,
       showEditCharacterModal: false,
 
-
       showManageCharactersModal: false,
-      manageCharactersMode: '', 
+      manageCharactersMode: '',
       tempAssignedCharacters: [],
       activeTab: 'user',
 
-
       llmCharacters: [],
-
 
       showDeleteConfirmModal: false,
       deleteTarget: { type: '', item: null, index: null },
 
-
       showSettingsModal: false,
       installedLLMs: [],
       currentLLM: '',
-
 
       newStory: {
         name: '',
@@ -488,7 +494,6 @@ export default {
         characters: [],
         originalName: '',
       },
-
 
       newCharacter: {
         name: '',
@@ -524,27 +529,27 @@ export default {
         originalName: '',
       },
 
-
       showAdvancedOptionsCreateCharacter: false,
       showAdvancedOptionsEditCharacter: false,
 
-      // ------------------------------
-      //     DICE ROLLER PROPERTIES
-      // ------------------------------
+      // DICE ROLLER PROPERTIES
       showDicePanel: false,
       presetModifier: 0,
       customDiceNotation: '',
       diceResult: null,
+
+
+      settingsActiveTab: 'llms',
+      modelAccuracy: 3,
+      contextSize: 4096,
     };
   },
   computed: {
-
     availableUserCharacters() {
       return this.characters.filter(
         (c) => !this.tempAssignedCharacters.includes(c.name) && !c.isLLM
       );
     },
-
     availableLLMCharacters() {
       return this.llmCharacters.filter(
         (c) => !this.tempAssignedCharacters.includes(c.name)
@@ -552,9 +557,6 @@ export default {
     },
   },
   methods: {
-    // ------------------------------
-    //      FETCH METHODS
-    // ------------------------------
     async fetchStories() {
       try {
         const response = await fetch('http://localhost:5000/get_stories');
@@ -573,10 +575,6 @@ export default {
         console.error('Error fetching characters:', error);
       }
     },
-
-    // ------------------------------
-    //     OPEN/CLOSE MODALS & PANELS
-    // ------------------------------
     openEditStoryModal(story) {
       fetch('http://localhost:5000/load_story', {
         method: 'POST',
@@ -621,7 +619,6 @@ export default {
       this.showDeleteConfirmModal = false;
       this.showManageCharactersModal = false;
 
-
       this.newStory = {
         name: '',
         description: '',
@@ -637,7 +634,6 @@ export default {
         characters: [],
         originalName: '',
       };
-
 
       this.newCharacter = {
         name: '',
@@ -673,19 +669,13 @@ export default {
         originalName: '',
       };
 
-
       this.tempAssignedCharacters = [];
       this.manageCharactersMode = '';
       this.activeTab = 'user';
 
-
       this.showAdvancedOptionsCreateCharacter = false;
       this.showAdvancedOptionsEditCharacter = false;
     },
-
-    // ------------------------------
-    //   MANAGE CHARACTERS LOGIC
-    // ------------------------------
     openManageCharactersModal(mode) {
       this.manageCharactersMode = mode;
       this.showManageCharactersModal = true;
@@ -752,10 +742,6 @@ export default {
           : { name: char, isLLM: true, race: 'Unknown', class: 'Unknown', backstory: '' };
       });
     },
-
-    // ------------------------------
-    //    STORY CREATION & EDITING
-    // ------------------------------
     async saveStoryData() {
       try {
         const dict = {};
@@ -766,12 +752,10 @@ export default {
             dict[charObj.name] = charObj;
           }
         });
-
         const payload = {
           ...this.newStory,
           characters: dict
         };
-
         const response = await fetch('http://localhost:5000/create_story', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -801,12 +785,10 @@ export default {
             dict[charObj.name] = charObj;
           }
         });
-
         const payload = {
           ...this.editedStory,
           characters: dict
         };
-
         const response = await fetch('http://localhost:5000/edit_story', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -834,10 +816,6 @@ export default {
         console.error('Error editing story:', error);
       }
     },
-
-    // ------------------------------
-    //   CHARACTER CREATION & EDITING
-    // ------------------------------
     async saveCharacterData() {
       try {
         const response = await fetch('http://localhost:5000/create_character', {
@@ -877,10 +855,6 @@ export default {
         console.error('Error editing character:', error);
       }
     },
-
-    // ------------------------------
-    //         STORY LOADING
-    // ------------------------------
     async openStory(story) {
       if (!story || !story.name) {
         console.error('Invalid story passed to openStory:', story);
@@ -914,10 +888,6 @@ export default {
         console.error('Error loading story:', error);
       }
     },
-
-    // ------------------------------
-    //         DELETION LOGIC
-    // ------------------------------
     openDeleteConfirmation(item, index, type) {
       this.deleteTarget = { type, item, index };
       this.showDeleteConfirmModal = true;
@@ -959,10 +929,6 @@ export default {
       this.showDeleteConfirmModal = false;
       this.deleteTarget = { type: '', item: null, index: null };
     },
-
-    // ------------------------------
-    //       SETTINGS & LLM
-    // ------------------------------
     openSettingsModal() {
       this.fetchInstalledLLMs();
       this.showSettingsModal = true;
@@ -1004,10 +970,6 @@ export default {
         console.error('Error setting LLM:', error);
       }
     },
-
-    // ------------------------------
-    //       DICE ROLLER METHODS
-    // ------------------------------
     toggleDicePanel() {
       this.showDicePanel = !this.showDicePanel;
       if (!this.showDicePanel) {
@@ -1016,12 +978,11 @@ export default {
       }
     },
     rollDice(sides, modifier) {
-  const roll = Math.floor(Math.random() * sides) + 1;
-  const total = roll + modifier;
-  const modStr = modifier >= 0 ? `+${modifier}` : `${modifier}`;
-  this.diceResult = `${roll}${modStr}=${total}`;
-},
-
+      const roll = Math.floor(Math.random() * sides) + 1;
+      const total = roll + modifier;
+      const modStr = modifier >= 0 ? `+${modifier}` : `${modifier}`;
+      this.diceResult = `${roll}${modStr}=${total}`;
+    },
     rollCustomDice() {
       const regex = /^(\d+)[dD](\d+)([+-]\d+)?$/;
       const match = this.customDiceNotation.trim().match(regex);
@@ -1042,10 +1003,6 @@ export default {
         this.customDiceError = 'Invalid dice notation';
       }
     },
-
-    // ------------------------------
-    //   Toggle Advanced Options
-    // ------------------------------
     toggleAdvancedOptions(mode) {
       if (mode === 'create') {
         this.showAdvancedOptionsCreateCharacter = !this.showAdvancedOptionsCreateCharacter;
@@ -1053,17 +1010,48 @@ export default {
         this.showAdvancedOptionsEditCharacter = !this.showAdvancedOptionsEditCharacter;
       }
     },
+    // New saveSettings method for the Settings modal with localStorage saving
+    saveSettings() {
+      // Save settings to localStorage so they persist
+      localStorage.setItem('modelAccuracy', this.modelAccuracy);
+      localStorage.setItem('contextSize', this.contextSize);
+
+      fetch('http://localhost:5000/update_settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model_accuracy: this.modelAccuracy,
+          context_size: this.contextSize,
+        }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          alert(data.message || 'Settings updated!');
+        })
+        .catch((err) => {
+          console.error('Error updating settings:', err);
+          alert('Error saving settings.');
+        });
+    },
   },
   mounted() {
     this.fetchStories();
     this.fetchCharacters();
-
     fetch('http://localhost:5000/get_model')
       .then((res) => res.json())
       .then((data) => {
         this.currentLLM = data.model;
       })
       .catch((err) => console.error(err));
+
+    const savedModelAccuracy = localStorage.getItem('modelAccuracy');
+    const savedContextSize = localStorage.getItem('contextSize');
+    if (savedModelAccuracy !== null) {
+      this.modelAccuracy = parseInt(savedModelAccuracy, 10);
+    }
+    if (savedContextSize !== null) {
+      this.contextSize = parseInt(savedContextSize, 10);
+    }
   },
 };
 </script>
@@ -1078,7 +1066,6 @@ body {
   overflow-x: hidden;
 }
 
-
 body::before {
   content: "";
   position: fixed;
@@ -1087,8 +1074,7 @@ body::before {
   width: 100%; 
   height: 100%;
   background: url('https://img.stablecog.com/insecure/1920w/aHR0cHM6Ly9iLnN0YWJsZWNvZy5jb20vOGQyYWM4ZDAtMzEyZC00ZDI1LWE5NWQtZDUzZDg5N2YxY2E2LmpwZWc.webp') center center / cover no-repeat;
-
-  z-index: -1; 
+  z-index: -1;
 }
 
 header {
@@ -1118,26 +1104,22 @@ header {
   margin-top: 5px; 
 }
 
-
 .slide-enter-from {
   transform: translateX(100%);
 }
 .slide-enter-to {
   transform: translateX(0%);
 }
-
 .slide-leave-from {
   transform: translateX(0%);
 }
 .slide-leave-to {
   transform: translateX(100%);
 }
-
 .slide-enter-active, 
 .slide-leave-active {
   transition: transform 0.5s ease-out;
 }
-
 
 #content { 
   display: flex; 
@@ -1513,6 +1495,9 @@ header {
   border-top: 1px solid #5D4037; 
   padding-top: 1rem; 
 }
+.setting-item {
+  margin-bottom: 1rem;
+}
 .close-btn {
   background: #5D4037;
   color: #fff;
@@ -1526,7 +1511,6 @@ header {
   background: #6D4C41; 
 }
 
-
 #dice-panel {
   position: fixed;
   top: 0;
@@ -1539,9 +1523,7 @@ header {
   box-shadow: -4px 0 10px rgba(0, 0, 0, 0.5);
   overflow-y: auto;
   z-index: 1100;
-
 }
-
 #dice-panel h2 { 
   margin-top: 0; 
   text-align: center; 
@@ -1586,7 +1568,6 @@ header {
   margin-bottom: 10px;
   box-sizing: border-box;
 }
-
 .advanced-options {
   margin-top: 10px;
   padding: 10px;
@@ -1597,7 +1578,6 @@ header {
 .advanced-options label { 
   font-size: 14px; 
 }
-
 .tooltip {
   background-color: #5D4037;
   color: #fff;
@@ -1614,12 +1594,9 @@ header {
 .tooltip a:hover {
   color: #81C784;
 }
-
 header h1 {
   color: #d4af37;       
-  text-shadow: none;   
-  
+  text-shadow: none;    
+  -webkit-font-smoothing: antialiased;
 }
-
-
 </style>
