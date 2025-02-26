@@ -15,8 +15,8 @@ current_model = "llama3.2-vision:latest"
 model_accuracy_threshold = 3     
 current_context_size = 4096      
 
-conversations = {}
-llm_conversations = {}
+conversations = {} 
+llm_conversations = {}  
 
 db = TinyDB('stories.json')
 stories_table = db.table('stories')
@@ -31,26 +31,31 @@ def construct_summary_prompt(conversation_text):
         {
             "role": "system",
             "content": (
-                "You are an assistant tasked with analyzing the conversation history of a story. "
+                "You are an assistant tasked with analyzing the conversation history of a D&D story. "
                 "Your job is to generate:\n\n"
-                "1. A concise **summary** of the story so far.\n"
+                "1. A comprehensive **summary** of the story so far, including key events, decisions, and character development.\n"
                 "2. An **updated character_creation dictionary** containing any new or modified character details.\n\n"
+                "Important guidelines:\n"
+                "- Include all significant character changes (physical changes, injuries, status effects, personality developments)\n"
+                "- Update character backstories to reflect new developments in the story\n"
+                "- Maintain continuity from previous summaries\n"
+                "- Track relationships between characters\n\n"
                 "Output Format:\n"
                 "{\n"
-                '  "summary": "A concise summary of the story so far.",\n'
+                '  "summary": "A detailed summary of the story progression.",\n'
                 '  "character_creation": {\n'
                 '    "CharacterName": {\n'
                 '      "name": "CharacterName",\n'
                 '      "race": "Race",\n'
                 '      "class": "Class",\n'
-                '      "backstory": "Character backstory."\n'
+                '      "backstory": "Updated character backstory with new developments",\n'
+                '      "status": "Current physical/mental state"\n'
                 "    }\n"
                 "  }\n"
                 "}\n\n"
                 "Ensure your output uses double quotes for all keys and string values, "
                 "so it conforms to JSON standards and is parsable by Python's json.loads().\n\n"
-                "Do not include any additional text, such as interactive prompts or action choices. "
-                "Only provide the summary and updated character details."
+                "Do not include any additional text, only the JSON."
             )
         },
         {
@@ -115,93 +120,161 @@ def merge_characters(existing_chars, new_chars):
         existing_chars = {}
     if not isinstance(new_chars, dict):
         new_chars = {}
+    
     merged_characters = existing_chars.copy()
+    
     for char_id, new_char in new_chars.items():
         if char_id in merged_characters:
             for key, val in new_char.items():
-                merged_characters[char_id][key] = val
+                if key == 'backstory' and merged_characters[char_id].get('backstory'):
+   
+                    original_backstory = merged_characters[char_id]['backstory']
+                    if val != original_backstory and val:
+  
+                        merged_characters[char_id]['backstory'] = val
+                elif key == 'status' and val:
+ 
+                    merged_characters[char_id][key] = val
+                else:
+        
+                    merged_characters[char_id][key] = val
         else:
+
             merged_characters[char_id] = new_char
+    
     return merged_characters
 
-def summarize_and_save(story_name, llm_conv, threshold=None):
-    # Use the global model_accuracy_threshold if no threshold is provided
+def process_summary_json(summary_text):
+    try:
+
+        json_match = re.search(r'({.*})', summary_text, re.DOTALL)
+        if json_match:
+            summary_data = json.loads(json_match.group(1))
+            return summary_data
+        else:
+
+            return {
+                "summary": summary_text,
+                "character_creation": {}
+            }
+    except json.JSONDecodeError as e:
+        print(f"DEBUG: JSON decode error: {e}")
+        return {
+            "summary": summary_text,
+            "character_creation": {}
+        }
+
+def summarize_and_save(story_name, threshold=None):
+
     if threshold is None:
         threshold = model_accuracy_threshold
+    
 
-    if len(llm_conv) <= 3:
+    llm_conv = llm_conversations.get(story_name, [])
+    
+
+    if len(llm_conv) < 3:
         return llm_conv
+    
 
-    new_user_msgs = [msg for msg in llm_conv[3:] if msg["role"] == "user"]
-    if len(new_user_msgs) < threshold:
+    user_messages = [msg for msg in llm_conv[3:] if msg["role"] == "user"]
+    
+
+    if len(user_messages) < threshold:
         return llm_conv
+    
 
-    summary_exists = (
+    has_summary = (
         len(llm_conv) > 3 and
         llm_conv[3]["role"] == "assistant" and
-        llm_conv[3]["content"].startswith("SUMMARY:")
+        "SUMMARY:" in llm_conv[3]["content"]
     )
-    start_index = 4 if summary_exists else 3
+    
 
-    base_summary = ""
-    if summary_exists:
-        base_summary = llm_conv[3]["content"].replace("SUMMARY:", "", 1).strip()
+    start_index = 4 if has_summary else 3
+    
 
-    new_text = "\n\n".join(
+    existing_summary = ""
+    if has_summary:
+        existing_summary = llm_conv[3]["content"].replace("SUMMARY:", "", 1).strip()
+    
+
+    new_content = "\n\n".join(
         f"{msg['role'].upper()}: {msg['content']}" for msg in llm_conv[start_index:]
     )
+    
 
-    if base_summary:
-        conversation_text = f"SUMMARY: {base_summary}\n\n{new_text}"
+    if existing_summary:
+        conversation_text = f"PREVIOUS SUMMARY: {existing_summary}\n\n{new_content}"
     else:
-        conversation_text = new_text
+        conversation_text = new_content
+    
 
     summarization_prompt = construct_summary_prompt(conversation_text)
-    print("DEBUG: Summarization Prompt sent to LLM:")
-    print(json.dumps(summarization_prompt, indent=2))
+    
 
-    response_chunks = ollama.chat(
+    response = ollama.chat(
         model=current_model,
         messages=summarization_prompt,
         stream=False,
-        options={"num_ctx": current_context_size}  
+        options={"num_ctx": current_context_size}
     )
-    if hasattr(response_chunks, "message"):
-        response_accumulated = response_chunks.message.content
-    elif isinstance(response_chunks, dict):
-        response_accumulated = response_chunks.get("message", {}).get("content", "")
-    elif isinstance(response_chunks, (list, tuple)):
-        response_accumulated = "".join(
-            chunk.get("message", {}).get("content", "") for chunk in response_chunks if isinstance(chunk, dict)
-        )
+    
+
+    if hasattr(response, "message"):
+        new_summary = response.message.content
+    elif isinstance(response, dict):
+        new_summary = response.get("message", {}).get("content", "")
     else:
-        response_accumulated = ""
+        new_summary = "Failed to generate summary."
+    
+    print(f"DEBUG: Raw summary response: {new_summary}")
+    
 
-    try:
-        if response_accumulated.strip().startswith("{"):
-            response_data = json.loads(response_accumulated)
-        else:
-            response_data = {"summary": response_accumulated.strip(), "character_creation": {}}
-    except Exception:
-        response_data = {"summary": response_accumulated.strip(), "character_creation": {}}
+    processed_summary = process_summary_json(new_summary)
+    
 
-    new_summary = response_data.get("summary", "")
-    new_characters = response_data.get("character_creation", {})
+    summary_message = {"role": "assistant", "content": f"SUMMARY: {json.dumps(processed_summary)}"}
+    
+ 
+    new_llm_conv = llm_conv[:3] + [summary_message]
+    
 
     story = story_creation_table.get(StoryQuery.name == story_name)
     if story:
-        existing_characters = story.get("characters", {})
-        merged_characters = merge_characters(existing_characters, new_characters)
+ 
+        if 'character_creation' in processed_summary and processed_summary['character_creation']:
+            existing_characters = story.get('characters', {})
+            if not isinstance(existing_characters, dict):
+                existing_characters = {}
+            
+ 
+            if isinstance(existing_characters, list):
+                char_dict = {}
+                for char in existing_characters:
+                    if isinstance(char, dict) and 'name' in char:
+                        char_dict[char['name']] = char
+                existing_characters = char_dict
+            
+  
+            merged_characters = merge_characters(existing_characters, processed_summary['character_creation'])
+            
+     
+            story_creation_table.update(
+                {'characters': merged_characters},
+                StoryQuery.name == story_name
+            )
+
         story_creation_table.update(
             {
-                "summary": new_summary,
-                "characters": merged_characters,
+                "conversation_history": conversations.get(story_name, []),  
+                "llm_memory": new_llm_conv, 
+                "current_summary": json.dumps(processed_summary)  
             },
-            StoryQuery.name == story_name,
+            StoryQuery.name == story_name
         )
+    
 
-    summarized_message = {"role": "assistant", "content": f"SUMMARY: {new_summary}"}
-    new_llm_conv = llm_conv[:3] + [summarized_message]
     return new_llm_conv
 
 def transform_conversation_for_display(conversation):
@@ -222,20 +295,21 @@ def chat():
     data = request.get_json()
     story_name = data.get('story_name')
     user_input = data.get('message')
+    
     story = story_creation_table.get(StoryQuery.name == story_name)
     if not story:
         return jsonify({'error': f"Story '{story_name}' not found."}), 404
-
+    
     if story['mode'] == 'dnd':
         initial_prompt = dnd_mode_prompt
     elif story['mode'] == 'novel':
         initial_prompt = novel_mode_prompt
     else:
         return jsonify({'error': 'Invalid story mode.'}), 400
-
+    
     if not user_input:
         return jsonify({'error': 'No message provided.'}), 400
-
+    
     story_details_prompt = {
         "role": "system",
         "content": (
@@ -245,9 +319,11 @@ def chat():
             f"Genre: {story.get('genre', 'N/A')}\n"
         )
     }
+    
     characters = story.get("characters", [])
     if isinstance(characters, dict):
         characters = list(characters.values())
+    
     character_details = "Story Characters:\n"
     for char in characters:
         if isinstance(char, dict):
@@ -262,19 +338,39 @@ def chat():
             character_details += details
         else:
             character_details += f"{char}\n"
+    
     character_prompt = {
         "role": "system",
         "content": character_details
     }
+    
 
-    if story_name in conversations and conversations[story_name]:
-        conversations[story_name][1] = story_details_prompt
-        conversations[story_name][2] = character_prompt
+    if story_name in llm_conversations and llm_conversations[story_name]:
+
         llm_conversations[story_name][1] = story_details_prompt
         llm_conversations[story_name][2] = character_prompt
     else:
-        conversations[story_name] = [initial_prompt, story_details_prompt, character_prompt]
-        llm_conversations[story_name] = [initial_prompt, story_details_prompt, character_prompt]
+
+        saved_llm_memory = story.get("llm_memory", [])
+        if saved_llm_memory and len(saved_llm_memory) >= 3:
+
+            llm_conversations[story_name] = saved_llm_memory
+
+            llm_conversations[story_name][0] = initial_prompt
+            llm_conversations[story_name][1] = story_details_prompt
+            llm_conversations[story_name][2] = character_prompt
+        else:
+
+            llm_conversations[story_name] = [initial_prompt, story_details_prompt, character_prompt]
+    
+
+    if story_name not in conversations:
+
+        conversations[story_name] = story.get("conversation_history", [])
+
+        if not conversations[story_name]:
+            conversations[story_name] = [initial_prompt, story_details_prompt, character_prompt]
+    
 
     user_message = {"role": "user", "content": user_input}
     conversations[story_name].append(user_message)
@@ -334,16 +430,24 @@ def chat():
                 assistant_msg = {"role": "assistant", "content": response_accumulated}
                 conversations[story_name].append(assistant_msg)
                 llm_conversations[story_name].append(assistant_msg)
+                
+
                 story_creation_table.update(
-                    {"conversation_history": conversations[story_name]},
+                    {
+                        "conversation_history": conversations[story_name],
+                        "llm_memory": llm_conversations[story_name]
+                    },
                     StoryQuery.name == story_name
                 )
+                
                 def background_summary():
-                    updated_conv = summarize_and_save(story_name, llm_conversations[story_name])
+                    updated_conv = summarize_and_save(story_name)
                     llm_conversations[story_name] = updated_conv
                     print("DEBUG: LLM Conversation after summarization:")
                     print(json.dumps(llm_conversations[story_name], indent=2))
+                
                 threading.Thread(target=background_summary).start()
+                
             print("DEBUG: Stream complete for story:", story_name)
 
     return Response(generate(), mimetype='text/event-stream')
@@ -382,11 +486,13 @@ def create_story():
     if not story_name or not description or not genre or not mode:
         return jsonify({'error': 'Story name, description, genre, and mode are required.'}), 400
 
-    character_copies = []
+    character_copies = {}
     for char_name in selected_characters:
         char = character_creation_table.get(StoryQuery.name == char_name)
         if char:
-            character_copies.append(char)
+            char_copy = char.copy()
+            char_copy['template_origin'] = char_name
+            character_copies[char_name] = char_copy
 
     existing_story = story_creation_table.get(StoryQuery.name == story_name)
     if existing_story:
@@ -395,7 +501,10 @@ def create_story():
                 'description': description or existing_story.get('description'),
                 'genre': genre or existing_story.get('genre'),
                 'mode': mode or existing_story.get('mode'),
-                'characters': character_copies
+                'characters': character_copies,
+                'conversation_history': existing_story.get('conversation_history', []),
+                'llm_memory': existing_story.get('llm_memory', []),
+                'current_summary': existing_story.get('current_summary', '')
             },
             StoryQuery.name == story_name,
         )
@@ -409,7 +518,8 @@ def create_story():
             'mode': mode,
             'characters': character_copies,
             'conversation_history': [],
-            'summary': ''
+            'llm_memory': [],
+            'current_summary': ''
         }
         story_creation_table.insert(new_story)
         message = f"Story '{story_name}' created successfully!"
@@ -422,14 +532,30 @@ def load_story():
     story_name = data.get('name', '').strip()
     if not story_name:
         return jsonify({'error': 'Story name is required.'}), 400
+    
     story = story_creation_table.get(StoryQuery.name == story_name)
     if not story:
         return jsonify({'error': f"Story with the name '{story_name}' does not exist."}), 404
-    conversation = story.get("conversation_history", [])
-    conversations[story_name] = conversation.copy()
-    llm_conversations[story_name] = conversation.copy()
-    display_conversation = transform_conversation_for_display(conversation)
-    return jsonify({'story': story, 'conversation': display_conversation})
+    
+    # Load the full conversation history for UI display
+    full_conversation = story.get("conversation_history", [])
+    conversations[story_name] = full_conversation.copy()
+    
+    # Load the summarized LLM memory for context
+    llm_memory = story.get("llm_memory", [])
+    if llm_memory:
+        llm_conversations[story_name] = llm_memory.copy()
+    else:
+        # If no LLM memory is saved, use the full conversation as a fallback
+        llm_conversations[story_name] = full_conversation.copy()
+    
+    # Transform conversation for display in UI
+    display_conversation = transform_conversation_for_display(full_conversation)
+    
+    return jsonify({
+        'story': story,
+        'conversation': display_conversation
+    })
 
 @app.route('/create_character', methods=['POST'])
 def create_character():
@@ -489,6 +615,14 @@ def edit_story():
     payload_characters = data.get('characters', {})
 
     stored_characters = story.get('characters', {})
+    
+
+    if isinstance(stored_characters, list):
+        char_dict = {}
+        for char in stored_characters:
+            if isinstance(char, dict) and 'name' in char:
+                char_dict[char['name']] = char
+        stored_characters = char_dict
 
     merged_characters = {}
 
@@ -498,7 +632,9 @@ def edit_story():
         else:
             char = character_creation_table.get(StoryQuery.name == char_name)
             if char:
-                merged_characters[char_name] = char
+                char_copy = char.copy()
+                char_copy['template_origin'] = char_name
+                merged_characters[char_name] = char_copy
             else:
                 merged_characters[char_name] = char_payload
 
@@ -507,7 +643,10 @@ def edit_story():
         'description': data.get('description', story['description']),
         'genre': data.get('genre', story['genre']),
         'mode': data.get('mode', story['mode']),
-        'characters': merged_characters
+        'characters': merged_characters,
+        'conversation_history': story.get('conversation_history', []),
+        'llm_memory': story.get('llm_memory', []),
+        'current_summary': story.get('current_summary', '')
     }
     story_creation_table.update(updated_data, StoryQuery.name == original_name)
     return jsonify(updated_data)
