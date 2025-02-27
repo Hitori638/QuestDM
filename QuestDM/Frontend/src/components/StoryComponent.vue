@@ -4,7 +4,7 @@
     <div id="conversation">
       <h1>{{ storySummary.name }}</h1>
       <div v-for="(message, index) in conversation" :key="index">
-        <p>
+        <p :class="{ 'dm-message': message.role === 'DM', 'player-message': message.role === 'You' }">
           <strong>{{ message.role }}:</strong> {{ message.content }}
         </p>
       </div>
@@ -16,7 +16,9 @@
         placeholder="Your action..."
       />
 
-      <button @click="sendMessage">{{ streaming ? 'Abort' : 'Send' }}</button>
+      <button @click="sendMessage" :class="{ streaming: streaming }">
+        {{ streaming ? 'Abort' : 'Send' }}
+      </button>
     </div>
     <div v-if="saving" class="popup-overlay">
       <div class="popup-content">
@@ -140,98 +142,168 @@ export default {
 <style scoped>
 
 
-body {
-  font-family: 'Lato', sans-serif; 
+/* Vue-compatible styling for message coloring */
 
-  background-size: cover;
-  background-position: center;
-  color: #f5f5f5;
-  margin: 0;
-  padding: 0;
+/* Base styling */
+#chatbox {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 0 15px;
+  transition: padding 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+  position: relative;
 }
 
+/* Key change: The entire chatbox adjusts with the dice panel */
+body.dice-panel-open #chatbox {
+  padding-right: 320px;
+}
 
 h1 {
   text-align: center;
   font-family: 'Cinzel', serif; 
   color: #d4af37; 
   margin-top: 20px;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.6);
+  margin-bottom: 30px;
+  font-size: 32px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+  letter-spacing: 1px;
 }
 
+/* Conversation area */
 #conversation {
-  max-width: 1000px;
-  margin: 20px auto;
-  padding: 15px;
-  border: 2px solid #555;
-  background: #3E2723;
-  border-radius: 10px;
-  box-shadow: 0 0 10px rgba(0, 0, 0, 0.7);
+  max-width: 100%;
+  margin: 0 auto 30px;
+  padding: 20px;
+  border: 2px solid #8D6E63;
+  background: rgba(33, 33, 33, 0.75);
+  border-radius: 12px;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
   overflow-y: auto;
   height: 500px;
+  transition: all 0.3s;
+  position: relative;
 }
 
+/* Base message styles */
 #conversation p {
-  margin: 10px 0;
-  padding: 10px;
+  margin: 15px 0;
+  padding: 15px;
   border-radius: 10px;
-  line-height: 1.5;
+  line-height: 1.6;
+  font-size: 16px;
+  position: relative;
+  transition: all 0.3s;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
+#conversation p:hover {
+  transform: translateX(5px);
+}
+
+/* Custom styling for DM role */
 #conversation p strong {
-  color: #d4af37;
+  font-weight: 700;
+  font-size: 18px;
+  margin-right: 10px;
 }
 
-
-#conversation p:nth-child(odd) {
-  background-color: #4E342E;
+/* Style for DM messages */
+.dm-message {
+  background-color: rgba(62, 39, 35, 0.85) !important; 
+  border-left: 3px solid #4CAF50 !important;
 }
 
+.dm-message strong {
+  color: #4CAF50 !important;
+}
 
+/* Style for Player messages */
+.player-message {
+  background-color: rgba(62, 39, 35, 0.85) !important;
+  border-left: 3px solid #d4af37 !important;
+}
+
+.player-message strong {
+  color: #d4af37 !important;
+}
+
+/* Input area */
 #input-area {
   display: flex;
   justify-content: center;
-  margin-top: 20px;
+  margin: 0 auto;
+  max-width: 100%;
+  position: relative;
+  transition: padding 0.5s cubic-bezier(0.19, 1, 0.22, 1);
 }
 
 #input-area input {
-  width: 850px;
-  padding: 10px;
-  border: 2px solid #555;
-  border-radius: 5px;
-  background: #4E342E;
-  color: #f5f5f5;
+  flex-grow: 1;
+  padding: 15px;
+  border: 2px solid #8D6E63;
+  border-radius: 8px 0 0 8px;
+  background-color: rgba(78, 52, 46, 0.9);
+  color: #fff;
   font-size: 16px;
+  transition: all 0.3s;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+#input-area input:focus {
+  outline: none;
+  border-color: #d4af37;
+  box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.3);
+}
+
+#input-area input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
 }
 
 #input-area button {
-  padding: 10px 20px;
-  margin-left: 10px;
+  padding: 15px 25px;
   border: none;
-  border-radius: 5px;
-  background: #8b4513; 
+  border-radius: 0 8px 8px 0;
+  background-color: #8b4513;
   color: #fff;
   font-size: 16px;
+  font-weight: 600;
   cursor: pointer;
-  transition: background 0.3s, transform 0.2s;
+  transition: all 0.3s;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
 #input-area button:hover {
-  background: #a0522d;
-  transform: scale(1.05);
+  background-color: #a0522d;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
 #input-area button:active {
-  transform: scale(0.95);
+  transform: translateY(0);
 }
 
+/* Streaming button state */
+#input-area button.streaming {
+  background-color: #C62828;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.7; }
+  100% { opacity: 1; }
+}
+
+/* Saving overlay popup */
 .popup-overlay {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.6);
+  background-color: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(3px);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -239,26 +311,56 @@ h1 {
 }
 
 .popup-content {
-  background: #222;
-  padding: 20px 40px;
+  background: linear-gradient(to bottom, #3d2824, #4E342E);
+  padding: 30px 50px;
   border-radius: 12px;
   text-align: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
 }
 
-/* Spinner */
+.popup-content p {
+  margin-top: 15px;
+  font-size: 18px;
+  color: #d4af37;
+  font-weight: 600;
+}
+
+/* Spinner animation */
 .spinner {
-  margin: 0 auto 10px;
-  border: 5px solid #444;
+  margin: 0 auto;
+  border: 5px solid rgba(78, 52, 46, 0.3);
   border-top: 5px solid #d4af37;
   border-radius: 50%;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
+}
+
+/* Responsive design for story component */
+@media (max-width: 768px) {
+  #conversation {
+    height: 400px;
+    padding: 15px;
+  }
+  
+  #input-area input,
+  #input-area button {
+    padding: 12px;
+  }
+  
+  h1 {
+    font-size: 24px;
+    margin-top: 15px;
+    margin-bottom: 20px;
+  }
+  
+  body.dice-panel-open #chatbox {
+    padding-right: 15px;
+  }
 }
 </style>

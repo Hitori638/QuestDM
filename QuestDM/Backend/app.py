@@ -18,6 +18,9 @@ current_context_size = 4096
 conversations = {} 
 llm_conversations = {}  
 
+message_count_since_cleanup = {}  
+cleanup_interval_messages = 5 
+
 db = TinyDB('stories.json')
 stories_table = db.table('stories')
 character_creation_table = db.table('character_creation')
@@ -34,8 +37,10 @@ def construct_summary_prompt(conversation_text):
                 "You are an assistant tasked with analyzing the conversation history of a D&D story. "
                 "Your job is to generate:\n\n"
                 "1. A comprehensive **summary** of the story so far, including key events, decisions, and character development.\n"
-                "2. An **updated character_creation dictionary** containing any new or modified character details.\n\n"
+                "2. An **updated character_creation dictionary** containing ANY AND ALL characters mentioned in the story.\n\n"
                 "Important guidelines:\n"
+                "- Include EVERY character that appears in the conversation, even if they only appear briefly\n"
+                "- For new characters, create a complete entry with as much information as available\n"
                 "- Include all significant character changes (physical changes, injuries, status effects, personality developments)\n"
                 "- Update character backstories to reflect new developments in the story\n"
                 "- Maintain continuity from previous summaries\n"
@@ -46,15 +51,20 @@ def construct_summary_prompt(conversation_text):
                 '  "character_creation": {\n'
                 '    "CharacterName": {\n'
                 '      "name": "CharacterName",\n'
-                '      "race": "Race",\n'
-                '      "class": "Class",\n'
-                '      "backstory": "Updated character backstory with new developments",\n'
-                '      "status": "Current physical/mental state"\n'
+                '      "race": "Race (if known, or \"Unknown\" if not)",\n'
+                '      "class": "Class (if known, or \"Unknown\" if not)",\n'
+                '      "backstory": "Character backstory based on available information",\n'
+                '      "status": "Current physical/mental state and location"\n'
+                "    },\n"
+                '    "AnotherCharacter": {\n'
+                '      "name": "AnotherCharacter",\n'
+                '      ... other character details\n'
                 "    }\n"
                 "  }\n"
                 "}\n\n"
                 "Ensure your output uses double quotes for all keys and string values, "
                 "so it conforms to JSON standards and is parsable by Python's json.loads().\n\n"
+                "IMPORTANT: You MUST include ALL characters that appear in the story, even minor ones.\n"
                 "Do not include any additional text, only the JSON."
             )
         },
@@ -102,7 +112,6 @@ dnd_mode_prompt = {
         "- **Resting & Recovery:** Implement short and long rest rules properly.\n\n"
         "**Ethical & Meta Guidelines:**\n"
         "- **Stay In-Character:** Do not break immersion with out-of-game references.\n"
-        "- **Adapt to Player Comfort:** If a topic causes discomfort, shift the narrative.\n"
         "- **Keep Pacing Steady:** Balance description with game flow to maintain engagement.\n\n"
         "Your role is to provide an engaging and authentic D&D experience by following these principles and ensuring the player's immersion and enjoyment."
     )
@@ -164,12 +173,104 @@ def process_summary_json(summary_text):
             "character_creation": {}
         }
 
-def summarize_and_save(story_name, threshold=None):
+def cleanup_inactive_characters(story_name, threshold=10):
+    """
+    Removes characters from the story that haven't been mentioned in the last N user prompts.
+    
+    Args:
+        story_name (str): The name of the story to clean up
+        threshold (int): Number of recent prompts to check for character mentions
+    """
+    story = story_creation_table.get(StoryQuery.name == story_name)
+    if not story:
+        print(f"DEBUG: Story '{story_name}' not found for character cleanup.")
+        return
+    
 
+    characters = story.get("characters", {})
+    if not characters or not isinstance(characters, dict) or len(characters) == 0:
+        print(f"DEBUG: No characters to clean up for story '{story_name}'.")
+        return
+    
+
+    llm_conv = llm_conversations.get(story_name, [])
+
+    start_idx = 4 if len(llm_conv) > 3 and "SUMMARY:" in llm_conv[3].get("content", "") else 3
+    recent_messages = llm_conv[start_idx:]
+    
+
+    user_messages = [msg for msg in recent_messages if msg["role"] == "user"]
+    
+
+    recent_user_messages = user_messages[-threshold:] if len(user_messages) > threshold else user_messages
+    
+    if not recent_user_messages:
+        print(f"DEBUG: No recent user messages found for story '{story_name}'.")
+        return
+    
+
+    recent_text = " ".join([msg["content"] for msg in recent_user_messages])
+    recent_text = recent_text.lower()  
+    
+
+    characters_to_keep = {}
+    characters_to_remove = {}
+    
+
+    for char_name, char_data in characters.items():
+
+        if 'template_origin' in char_data:
+            characters_to_keep[char_name] = char_data
+            continue
+            
+
+        actual_name = char_data.get('name', char_name).lower()
+        
+
+        if actual_name in recent_text:
+            characters_to_keep[char_name] = char_data
+        else:
+            characters_to_remove[char_name] = char_data
+    
+    if not characters_to_remove:
+        print(f"DEBUG: No characters to remove from story '{story_name}'.")
+        return
+    
+    print(f"DEBUG: Removing {len(characters_to_remove)} inactive characters from story '{story_name}'.")
+    print(f"DEBUG: Removed characters: {', '.join(characters_to_remove.keys())}")
+    
+
+    story_creation_table.update(
+        {'characters': characters_to_keep},
+        StoryQuery.name == story_name
+    )
+    
+
+    try:
+        current_summary = story.get('current_summary', '{}')
+        summary_data = json.loads(current_summary)
+        
+        if isinstance(summary_data, dict) and 'character_creation' in summary_data:
+
+            filtered_characters = {
+                k: v for k, v in summary_data['character_creation'].items() 
+                if k in characters_to_keep
+            }
+            summary_data['character_creation'] = filtered_characters
+            
+
+            story_creation_table.update(
+                {'current_summary': json.dumps(summary_data)},
+                StoryQuery.name == story_name
+            )
+    except (json.JSONDecodeError, AttributeError) as e:
+        print(f"DEBUG: Error updating summary during character cleanup: {e}")
+
+
+def summarize_and_save(story_name, threshold=None):
     if threshold is None:
         threshold = model_accuracy_threshold
     
-
     llm_conv = llm_conversations.get(story_name, [])
     
 
@@ -208,11 +309,9 @@ def summarize_and_save(story_name, threshold=None):
         conversation_text = f"PREVIOUS SUMMARY: {existing_summary}\n\n{new_content}"
     else:
         conversation_text = new_content
-    
 
     summarization_prompt = construct_summary_prompt(conversation_text)
     
-
     response = ollama.chat(
         model=current_model,
         messages=summarization_prompt,
@@ -232,23 +331,34 @@ def summarize_and_save(story_name, threshold=None):
     
 
     processed_summary = process_summary_json(new_summary)
+
+    summary_text = processed_summary.get("summary", "")
     
 
-    summary_message = {"role": "assistant", "content": f"SUMMARY: {json.dumps(processed_summary)}"}
+    summary_message = {"role": "assistant", "content": f"SUMMARY: {summary_text}"}
     
- 
+
+    recent_messages_to_keep = threshold 
+    
+
     new_llm_conv = llm_conv[:3] + [summary_message]
+    
+
+    if len(llm_conv) > start_index + recent_messages_to_keep:
+        new_llm_conv += llm_conv[-(recent_messages_to_keep):]
+    else:
+        new_llm_conv += llm_conv[start_index:]
     
 
     story = story_creation_table.get(StoryQuery.name == story_name)
     if story:
- 
+
         if 'character_creation' in processed_summary and processed_summary['character_creation']:
             existing_characters = story.get('characters', {})
             if not isinstance(existing_characters, dict):
                 existing_characters = {}
             
- 
+
             if isinstance(existing_characters, list):
                 char_dict = {}
                 for char in existing_characters:
@@ -256,25 +366,25 @@ def summarize_and_save(story_name, threshold=None):
                         char_dict[char['name']] = char
                 existing_characters = char_dict
             
-  
+
             merged_characters = merge_characters(existing_characters, processed_summary['character_creation'])
             
-     
+
             story_creation_table.update(
                 {'characters': merged_characters},
                 StoryQuery.name == story_name
             )
 
+
         story_creation_table.update(
             {
-                "conversation_history": conversations.get(story_name, []),  
-                "llm_memory": new_llm_conv, 
+                "conversation_history": conversations.get(story_name, []),
+                "llm_memory": new_llm_conv,
                 "current_summary": json.dumps(processed_summary)  
             },
             StoryQuery.name == story_name
         )
     
-
     return new_llm_conv
 
 def transform_conversation_for_display(conversation):
@@ -289,6 +399,11 @@ def transform_conversation_for_display(conversation):
             new_msg["role"] = "You"
             transformed.append(new_msg)
     return transformed
+
+
+message_count_since_cleanup = {} 
+cleanup_interval_messages = 5    
+
 
 @app.route('/chat', methods=['POST'])
 def chat():
@@ -346,30 +461,30 @@ def chat():
     
 
     if story_name in llm_conversations and llm_conversations[story_name]:
-
         llm_conversations[story_name][1] = story_details_prompt
         llm_conversations[story_name][2] = character_prompt
     else:
-
         saved_llm_memory = story.get("llm_memory", [])
         if saved_llm_memory and len(saved_llm_memory) >= 3:
-
             llm_conversations[story_name] = saved_llm_memory
-
             llm_conversations[story_name][0] = initial_prompt
             llm_conversations[story_name][1] = story_details_prompt
             llm_conversations[story_name][2] = character_prompt
         else:
-
             llm_conversations[story_name] = [initial_prompt, story_details_prompt, character_prompt]
     
 
     if story_name not in conversations:
-
         conversations[story_name] = story.get("conversation_history", [])
-
         if not conversations[story_name]:
             conversations[story_name] = [initial_prompt, story_details_prompt, character_prompt]
+    
+
+    if story_name not in message_count_since_cleanup:
+        message_count_since_cleanup[story_name] = 0
+    
+
+    message_count_since_cleanup[story_name] += 1
     
 
     user_message = {"role": "user", "content": user_input}
@@ -431,7 +546,6 @@ def chat():
                 conversations[story_name].append(assistant_msg)
                 llm_conversations[story_name].append(assistant_msg)
                 
-
                 story_creation_table.update(
                     {
                         "conversation_history": conversations[story_name],
@@ -440,17 +554,24 @@ def chat():
                     StoryQuery.name == story_name
                 )
                 
-                def background_summary():
+                def background_tasks():
                     updated_conv = summarize_and_save(story_name)
                     llm_conversations[story_name] = updated_conv
                     print("DEBUG: LLM Conversation after summarization:")
                     print(json.dumps(llm_conversations[story_name], indent=2))
+                    
+
+                    if message_count_since_cleanup[story_name] >= cleanup_interval_messages:
+                        print(f"DEBUG: Running character cleanup for story '{story_name}'")
+                        cleanup_inactive_characters(story_name, threshold=10)  
+                        message_count_since_cleanup[story_name] = 0
                 
-                threading.Thread(target=background_summary).start()
+                threading.Thread(target=background_tasks).start()
                 
             print("DEBUG: Stream complete for story:", story_name)
 
     return Response(generate(), mimetype='text/event-stream')
+
 
 @app.route('/list_models', methods=['GET'])
 def list_models():
@@ -536,20 +657,71 @@ def load_story():
     story = story_creation_table.get(StoryQuery.name == story_name)
     if not story:
         return jsonify({'error': f"Story with the name '{story_name}' does not exist."}), 404
-    
-    # Load the full conversation history for UI display
+
     full_conversation = story.get("conversation_history", [])
     conversations[story_name] = full_conversation.copy()
     
-    # Load the summarized LLM memory for context
+
     llm_memory = story.get("llm_memory", [])
-    if llm_memory:
-        llm_conversations[story_name] = llm_memory.copy()
-    else:
-        # If no LLM memory is saved, use the full conversation as a fallback
-        llm_conversations[story_name] = full_conversation.copy()
     
-    # Transform conversation for display in UI
+
+    if story['mode'] == 'dnd':
+        initial_prompt = dnd_mode_prompt
+    elif story['mode'] == 'novel':
+        initial_prompt = novel_mode_prompt
+    else:
+        initial_prompt = dnd_mode_prompt 
+    
+    story_details_prompt = {
+        "role": "system",
+        "content": (
+            f"Story Details:\n"
+            f"Name: {story.get('name', 'Unknown')}\n"
+            f"Description: {story.get('description', 'No description')}\n"
+            f"Genre: {story.get('genre', 'N/A')}\n"
+        )
+    }
+    
+    characters = story.get("characters", {})
+    if isinstance(characters, list):
+        char_dict = {}
+        for char in characters:
+            if isinstance(char, dict) and 'name' in char:
+                char_dict[char['name']] = char
+        characters = char_dict
+    
+    character_details = "Story Characters:\n"
+    for char_name, char in characters.items():
+        if isinstance(char, dict):
+            details = f"{char.get('name', 'Unknown')} (Race: {char.get('race', 'Unknown')}, Class: {char.get('class', 'Unknown')})\n"
+            details += f"Backstory: {char.get('backstory', 'No backstory')}\n"
+            advanced_info = []
+            for key in char:
+                if key not in ['name', 'race', 'class', 'backstory']:
+                    advanced_info.append(f"{key}: {char[key]}")
+            if advanced_info:
+                details += "Advanced: " + ", ".join(advanced_info) + "\n"
+            character_details += details
+    
+    character_prompt = {
+        "role": "system",
+        "content": character_details
+    }
+    
+    if llm_memory:
+        if len(llm_memory) >= 3:
+            llm_memory[0] = initial_prompt
+            llm_memory[1] = story_details_prompt
+            llm_memory[2] = character_prompt
+            llm_conversations[story_name] = llm_memory.copy()
+        else:
+            llm_conversations[story_name] = [initial_prompt, story_details_prompt, character_prompt]
+            if len(llm_memory) > 0:
+                llm_conversations[story_name].extend(llm_memory)
+    else:
+        llm_conversations[story_name] = [initial_prompt, story_details_prompt, character_prompt]
+    
+
     display_conversation = transform_conversation_for_display(full_conversation)
     
     return jsonify({
