@@ -73,6 +73,7 @@ export default {
       this.streaming = true;
       
       try {
+        const response = await api.getEventSource('/chat', {
           story_name: this.storySummary.name,
           story_details: this.storySummary,
           message: message,
