@@ -5,3 +5,4 @@ QuestDM/Backend/app_old.py
 questdm_log.txt
 questdm_log.txt
 questdm_log.txt
+/QuestDM/Frontend/dist_electron
