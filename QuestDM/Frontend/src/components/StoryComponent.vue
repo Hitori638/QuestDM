@@ -142,9 +142,9 @@ export default {
 <style scoped>
 
 
-/* Vue-compatible styling for message coloring */
 
-/* Base styling */
+
+
 #chatbox {
   max-width: 1000px;
   margin: 0 auto;
@@ -153,7 +153,7 @@ export default {
   position: relative;
 }
 
-/* Key change: The entire chatbox adjusts with the dice panel */
+
 body.dice-panel-open #chatbox {
   padding-right: 320px;
 }
@@ -169,7 +169,7 @@ h1 {
   letter-spacing: 1px;
 }
 
-/* Conversation area */
+
 #conversation {
   max-width: 100%;
   margin: 0 auto 30px;
@@ -184,7 +184,7 @@ h1 {
   position: relative;
 }
 
-/* Base message styles */
+
 #conversation p {
   margin: 15px 0;
   padding: 15px;
@@ -200,14 +200,14 @@ h1 {
   transform: translateX(5px);
 }
 
-/* Custom styling for DM role */
+
 #conversation p strong {
   font-weight: 700;
   font-size: 18px;
   margin-right: 10px;
 }
 
-/* Style for DM messages */
+
 .dm-message {
   background-color: rgba(62, 39, 35, 0.85) !important; 
   border-left: 3px solid #4CAF50 !important;
@@ -217,7 +217,7 @@ h1 {
   color: #4CAF50 !important;
 }
 
-/* Style for Player messages */
+
 .player-message {
   background-color: rgba(62, 39, 35, 0.85) !important;
   border-left: 3px solid #d4af37 !important;

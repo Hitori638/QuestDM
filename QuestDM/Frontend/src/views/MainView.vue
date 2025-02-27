@@ -220,7 +220,7 @@
       </div>
     </div>
 
-    <!-- Create Character Modal -->
+
     <div v-if="showCreateCharacterModal" id="create-character-modal">
       <div class="modal-overlay" @click="closeModal"></div>
       <div class="modal-content">
@@ -1012,9 +1012,9 @@ export default {
         this.showAdvancedOptionsEditCharacter = !this.showAdvancedOptionsEditCharacter;
       }
     },
-    // New saveSettings method for the Settings modal with localStorage saving
+
     saveSettings() {
-      // Save settings to localStorage so they persist
+
       localStorage.setItem('modelAccuracy', this.modelAccuracy);
       localStorage.setItem('contextSize', this.contextSize);
 
@@ -1058,11 +1058,7 @@ export default {
 };
 </script>
 <style>
-/* Base Styling */
-/* Complete CSS for Adventure App
-   This includes all fixes for modals, dice panel, and overall styling */
 
-/* Base Styling */
 body {
   font-family: 'Lora', serif;
   margin: 0;
@@ -1085,7 +1081,7 @@ body::before {
   filter: brightness(0.9);
 }
 
-/* Scrollbar styling */
+
 ::-webkit-scrollbar { 
   width: 8px; 
 }
@@ -1097,7 +1093,7 @@ body::before {
   background: #7B5E57; 
 }
 
-/* Header */
+
 header {
   text-align: center;
   padding: 20px;
@@ -1142,15 +1138,15 @@ header h1 {
 .settings-btn { top: 20px; right: 20px; }
 .dice-btn { top: 20px; right: 70px; }
 
-/* Main Layout */
+
 #content { 
   display: flex; 
   height: calc(100vh - 80px);
   position: relative;
-  overflow: hidden; /* Important: Prevents content overflow */
+  overflow: hidden; 
 }
 
-/* Sidebar - Fixed positioning */
+
 #sidebar { 
   width: 280px;
   background-color: rgba(62, 39, 35, 0.95);
@@ -1160,14 +1156,14 @@ header h1 {
   overflow-y: auto;
   position: fixed;
   left: 0;
-  top: 80px; /* Header height */
+  top: 80px; 
   bottom: 0;
   z-index: 5;
 }
 
-/* Main Content - Adjusted to work with fixed sidebar */
+
 #main-content { 
-  margin-left: 280px; /* Same as sidebar width */
+  margin-left: 280px; 
   flex-grow: 1; 
   padding: 20px; 
   overflow-y: auto;
@@ -1177,12 +1173,12 @@ header h1 {
   transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1);
 }
 
-/* When dice panel is open, adjust the main content position */
+
 body.dice-panel-open #main-content {
   padding-right: 320px;
 }
 
-/* Tabs */
+
 #tabs { 
   display: flex; 
   justify-content: space-around; 
@@ -1219,7 +1215,6 @@ body.dice-panel-open #main-content {
   transform: translateY(0);
 }
 
-/* Lists */
 #stories ul, 
 #characters ul { 
   list-style: none; 
@@ -1263,7 +1258,7 @@ body.dice-panel-open #main-content {
   color: #d4af37;
 }
 
-/* Buttons */
+
 .edit-btn, .delete-btn {
   background: none;
   border: none;
@@ -1324,7 +1319,7 @@ body.dice-panel-open #main-content {
   transform: translateY(0);
 }
 
-/* StoryComponent Styling */
+
 #chatbox {
   width: 100%;
   max-width: 1000px;
@@ -1332,7 +1327,7 @@ body.dice-panel-open #main-content {
   transition: all 0.5s cubic-bezier(0.19, 1, 0.22, 1);
 }
 
-/* Key change: The entire chatbox adjusts with the dice panel */
+
 body.dice-panel-open #chatbox {
   padding-right: 280px;
 }
@@ -1348,7 +1343,7 @@ h1 {
   letter-spacing: 1px;
 }
 
-/* Conversation area */
+
 #conversation {
   width: 100%;
   margin: 0 auto 20px;
@@ -1362,7 +1357,7 @@ h1 {
   transition: all 0.5s;
 }
 
-/* Message styles */
+
 #conversation p {
   margin: 15px 0;
   padding: 15px;
@@ -1385,7 +1380,7 @@ h1 {
   margin-right: 10px;
 }
 
-/* Different styling for player vs DM messages */
+
 #conversation p:nth-of-type(odd) {
   background-color: rgba(78, 52, 46, 0.85);
   border-left: 3px solid #d4af37;
@@ -1396,7 +1391,7 @@ h1 {
   border-left: 3px solid #a1887f;
 }
 
-/* Input area */
+
 #input-area {
   display: flex;
   justify-content: center;
@@ -1451,7 +1446,7 @@ h1 {
   transform: translateY(0);
 }
 
-/* Streaming button state */
+
 #input-area button.streaming {
   background-color: #C62828;
   animation: pulse 1.5s infinite;
@@ -1463,7 +1458,7 @@ h1 {
   100% { opacity: 1; }
 }
 
-/* Dice Panel - Fixed positioning with improved animation */
+
 #dice-panel {
   position: fixed;
   top: 0;
@@ -1623,7 +1618,7 @@ h1 {
   font-weight: 500;
 }
 
-/* Modal Styling - Unified and Improved */
+
 #create-story-modal,
 #edit-story-modal,
 #create-character-modal,
@@ -1754,7 +1749,7 @@ h1 {
   background-color: #4E342E; 
 }
 
-/* Manage Characters Modal */
+
 .manage-characters-modal-content { 
   max-width: 700px; 
   text-align: left; 
@@ -1843,7 +1838,7 @@ h1 {
   padding-top: 1rem; 
 }
 
-/* Settings Modal */
+
 #settings-modal .modal-content {
   background: linear-gradient(to bottom, #3d2824, #4E342E);
   border-radius: 12px;
@@ -1926,6 +1921,7 @@ h1 {
   width: 100%;
   margin: 10px 0;
   -webkit-appearance: none;
+  appearance: none;
   height: 5px;
   background: #5D4037;
   border-radius: 5px;
@@ -1976,7 +1972,7 @@ h1 {
   text-decoration: underline;
 }
 
-/* Advanced Options */
+
 .advanced-options {
   margin-top: 15px;
   padding: 15px;
@@ -1985,7 +1981,7 @@ h1 {
   background-color: rgba(62, 39, 35, 0.5);
 }
 
-/* Confirmation Modal */
+
 .confirmation-modal .modal-overlay {
   position: fixed;
   top: 0;
@@ -2029,7 +2025,7 @@ h1 {
   background-color: #D32F2F;
 }
 
-/* Popup overlay */
+
 .popup-overlay {
   position: fixed;
   top: 0;
@@ -2059,7 +2055,7 @@ h1 {
   font-weight: 600;
 }
 
-/* Spinner animation */
+
 .spinner {
   margin: 0 auto;
   border: 5px solid rgba(78, 52, 46, 0.3);
@@ -2070,7 +2066,7 @@ h1 {
   animation: spin 1s linear infinite;
 }
 
-/* Responsive Design */
+
 @media (max-width: 992px) {
   #sidebar {
     width: 220px;
