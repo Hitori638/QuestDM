@@ -18,9 +18,6 @@ current_context_size = 4096
 conversations = {} 
 llm_conversations = {}  
 
-message_count_since_cleanup = {}  
-cleanup_interval_messages = 5 
-
 db = TinyDB('stories.json')
 stories_table = db.table('stories')
 character_creation_table = db.table('character_creation')
@@ -36,36 +33,25 @@ def construct_summary_prompt(conversation_text):
             "content": (
                 "You are an assistant tasked with analyzing the conversation history of a D&D story. "
                 "Your job is to generate:\n\n"
-                "1. A comprehensive **summary** of the story so far, including key events, decisions, and character development.\n"
-                "2. An **updated character_creation dictionary** containing ANY AND ALL characters mentioned in the story.\n\n"
-                "Important guidelines:\n"
-                "- Include EVERY character that appears in the conversation, even if they only appear briefly\n"
-                "- For new characters, create a complete entry with as much information as available\n"
-                "- Include all significant character changes (physical changes, injuries, status effects, personality developments)\n"
-                "- Update character backstories to reflect new developments in the story\n"
-                "- Maintain continuity from previous summaries\n"
-                "- Track relationships between characters\n\n"
-                "Output Format:\n"
+                "1. A comprehensive **summary** of the story so far as a simple string\n"
+                "2. An **updated character_creation dictionary** containing ANY AND ALL characters\n\n"
+                "EXTREMELY IMPORTANT: You MUST follow the exact format below - do not add new fields, do not change the structure:\n"
                 "{\n"
                 '  "summary": "A detailed summary of the story progression.",\n'
                 '  "character_creation": {\n'
                 '    "CharacterName": {\n'
                 '      "name": "CharacterName",\n'
-                '      "race": "Race (if known, or \"Unknown\" if not)",\n'
-                '      "class": "Class (if known, or \"Unknown\" if not)",\n'
+                '      "race": "Race (if known, or \\"Unknown\\" if not)",\n'
+                '      "class": "Class (if known, or \\"Unknown\\" if not)",\n'
                 '      "backstory": "Character backstory based on available information",\n'
                 '      "status": "Current physical/mental state and location"\n'
-                "    },\n"
-                '    "AnotherCharacter": {\n'
-                '      "name": "AnotherCharacter",\n'
-                '      ... other character details\n'
                 "    }\n"
                 "  }\n"
                 "}\n\n"
-                "Ensure your output uses double quotes for all keys and string values, "
-                "so it conforms to JSON standards and is parsable by Python's json.loads().\n\n"
-                "IMPORTANT: You MUST include ALL characters that appear in the story, even minor ones.\n"
-                "Do not include any additional text, only the JSON."
+                "DO NOT modify this structure. DO NOT add nested objects to summary. DO NOT add nested arrays. The summary field MUST be a single string. "
+                "ALL keys in the character_creation dictionary MUST EXACTLY MATCH the corresponding 'name' field for each character. "
+                "Ensure all strings are properly escaped with no newlines inside the strings. "
+                "All JSON properties must have commas between them."
             )
         },
         {
@@ -73,6 +59,7 @@ def construct_summary_prompt(conversation_text):
             "content": conversation_text
         }
     ]
+
 
 novel_mode_prompt = {
     "role": "system",
@@ -154,118 +141,102 @@ def merge_characters(existing_chars, new_chars):
     return merged_characters
 
 def process_summary_json(summary_text):
+    """
+    Process and extract structured data from LLM-generated summary text.
+    Handles various JSON formats and issues like escape sequences and newlines.
+    
+    Args:
+        summary_text (str): The raw summary text from the LLM.
+        
+    Returns:
+        dict: A dictionary with 'summary' and 'character_creation' keys.
+    """
+   
+    
     try:
+        if summary_text.startswith("SUMMARY:"):
+            summary_text = summary_text[len("SUMMARY:"):].strip()
+        
 
         json_match = re.search(r'({.*})', summary_text, re.DOTALL)
         if json_match:
-            summary_data = json.loads(json_match.group(1))
-            return summary_data
+            json_str = json_match.group(1)
         else:
+            json_str = summary_text
+        
+ 
+        json_str = re.sub(r'\\+"', '"', json_str)
 
-            return {
-                "summary": summary_text,
+        json_str = re.sub(r':\s*\\+([^,}\s"]+)', r':"\1"', json_str)
+
+        json_str = re.sub(r'("\s*:\s*"[^"]*)[\n\r]+\s*[\n\r]+\s*([^"]*")', r'\1 \2', json_str)
+        
+
+        try:
+            data = json.loads(json_str)
+            return data
+        except json.JSONDecodeError as e:
+            print(f"DEBUG: Initial JSON parsing failed: {e}")
+            
+     
+            result = {
+                "summary": "",
                 "character_creation": {}
             }
-    except json.JSONDecodeError as e:
-        print(f"DEBUG: JSON decode error: {e}")
+            
+ 
+            summary_match = re.search(r'"summary"\s*:\s*"([^"]+)"', json_str)
+            if summary_match:
+                result["summary"] = summary_match.group(1)
+            
+     
+            char_section_match = re.search(r'"character_creation"\s*:\s*{(.*)}', json_str, re.DOTALL)
+            if char_section_match:
+                char_section = char_section_match.group(1)
+                
+  
+                char_pattern = r'"([^"]+)"\s*:\s*{([^{}]*(?:{[^{}]*}[^{}]*)*?)}'
+                for char_match in re.finditer(char_pattern, char_section):
+                    char_name = char_match.group(1).replace('"', '').replace('\\', '').strip()
+                    char_content = char_match.group(2)
+                    
+              
+                    if char_name == "character_creation":
+                        continue
+                    
+                
+                    char_data = {
+                        "name": char_name,
+                        "race": "Unknown",
+                        "class": "Unknown",
+                        "backstory": "",
+                        "status": ""
+                    }
+                    
+            
+                    prop_pattern = r'"([^"]+)"\s*:\s*"?([^",}]*)"?'
+                    for prop_match in re.finditer(prop_pattern, char_content):
+                        prop_name = prop_match.group(1).strip()
+                        prop_value = prop_match.group(2).strip()
+                        
+                  
+                        prop_value = re.sub(r'[\n\r\t]+', ' ', prop_value)
+                        prop_value = re.sub(r'\\+', '', prop_value)
+                        
+              
+                        if prop_name in ["name", "race", "class", "backstory", "status"]:
+                            char_data[prop_name] = prop_value
+                    
+          
+                    result["character_creation"][char_name] = char_data
+            
+            return result
+    except Exception as e:
+        print(f"DEBUG: Error processing summary JSON: {e}")
         return {
-            "summary": summary_text,
+            "summary": summary_text[:100] + "..." if len(summary_text) > 100 else summary_text,
             "character_creation": {}
         }
-
-def cleanup_inactive_characters(story_name, threshold=10):
-    """
-    Removes characters from the story that haven't been mentioned in the last N user prompts.
-    
-    Args:
-        story_name (str): The name of the story to clean up
-        threshold (int): Number of recent prompts to check for character mentions
-    """
-    story = story_creation_table.get(StoryQuery.name == story_name)
-    if not story:
-        print(f"DEBUG: Story '{story_name}' not found for character cleanup.")
-        return
-    
-
-    characters = story.get("characters", {})
-    if not characters or not isinstance(characters, dict) or len(characters) == 0:
-        print(f"DEBUG: No characters to clean up for story '{story_name}'.")
-        return
-    
-
-    llm_conv = llm_conversations.get(story_name, [])
-
-    start_idx = 4 if len(llm_conv) > 3 and "SUMMARY:" in llm_conv[3].get("content", "") else 3
-    recent_messages = llm_conv[start_idx:]
-    
-
-    user_messages = [msg for msg in recent_messages if msg["role"] == "user"]
-    
-
-    recent_user_messages = user_messages[-threshold:] if len(user_messages) > threshold else user_messages
-    
-    if not recent_user_messages:
-        print(f"DEBUG: No recent user messages found for story '{story_name}'.")
-        return
-    
-
-    recent_text = " ".join([msg["content"] for msg in recent_user_messages])
-    recent_text = recent_text.lower()  
-    
-
-    characters_to_keep = {}
-    characters_to_remove = {}
-    
-
-    for char_name, char_data in characters.items():
-
-        if 'template_origin' in char_data:
-            characters_to_keep[char_name] = char_data
-            continue
-            
-
-        actual_name = char_data.get('name', char_name).lower()
-        
-
-        if actual_name in recent_text:
-            characters_to_keep[char_name] = char_data
-        else:
-            characters_to_remove[char_name] = char_data
-    
-    if not characters_to_remove:
-        print(f"DEBUG: No characters to remove from story '{story_name}'.")
-        return
-    
-    print(f"DEBUG: Removing {len(characters_to_remove)} inactive characters from story '{story_name}'.")
-    print(f"DEBUG: Removed characters: {', '.join(characters_to_remove.keys())}")
-    
-
-    story_creation_table.update(
-        {'characters': characters_to_keep},
-        StoryQuery.name == story_name
-    )
-    
-
-    try:
-        current_summary = story.get('current_summary', '{}')
-        summary_data = json.loads(current_summary)
-        
-        if isinstance(summary_data, dict) and 'character_creation' in summary_data:
-
-            filtered_characters = {
-                k: v for k, v in summary_data['character_creation'].items() 
-                if k in characters_to_keep
-            }
-            summary_data['character_creation'] = filtered_characters
-            
-
-            story_creation_table.update(
-                {'current_summary': json.dumps(summary_data)},
-                StoryQuery.name == story_name
-            )
-    except (json.JSONDecodeError, AttributeError) as e:
-        print(f"DEBUG: Error updating summary during character cleanup: {e}")
-
 
 def summarize_and_save(story_name, threshold=None):
     if threshold is None:
@@ -401,10 +372,6 @@ def transform_conversation_for_display(conversation):
     return transformed
 
 
-message_count_since_cleanup = {} 
-cleanup_interval_messages = 5    
-
-
 @app.route('/chat', methods=['POST'])
 def chat():
     data = request.get_json()
@@ -479,14 +446,6 @@ def chat():
         if not conversations[story_name]:
             conversations[story_name] = [initial_prompt, story_details_prompt, character_prompt]
     
-
-    if story_name not in message_count_since_cleanup:
-        message_count_since_cleanup[story_name] = 0
-    
-
-    message_count_since_cleanup[story_name] += 1
-    
-
     user_message = {"role": "user", "content": user_input}
     conversations[story_name].append(user_message)
     llm_conversations[story_name].append(user_message)
@@ -559,12 +518,6 @@ def chat():
                     llm_conversations[story_name] = updated_conv
                     print("DEBUG: LLM Conversation after summarization:")
                     print(json.dumps(llm_conversations[story_name], indent=2))
-                    
-
-                    if message_count_since_cleanup[story_name] >= cleanup_interval_messages:
-                        print(f"DEBUG: Running character cleanup for story '{story_name}'")
-                        cleanup_inactive_characters(story_name, threshold=10)  
-                        message_count_since_cleanup[story_name] = 0
                 
                 threading.Thread(target=background_tasks).start()
                 
