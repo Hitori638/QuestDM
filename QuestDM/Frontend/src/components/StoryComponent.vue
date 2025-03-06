@@ -30,6 +30,8 @@
 </template>
 
 <script>
+import { api } from '@/utils/api.js';
+
 export default {
   props: {
     storySummary: {
@@ -71,22 +73,20 @@ export default {
       this.streaming = true;
       
       try {
-        const response = await fetch('http://localhost:5000/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            story_name: this.storySummary.name,
-            story_details: this.storySummary,
-            message: message,
-          }),
-          signal: this.abortController.signal,
+        const response = await api.getEventSource('/chat', {
+          story_name: this.storySummary.name,
+          story_details: this.storySummary,
+          message: message,
         });
+        
         const reader = response.body.getReader();
         const decoder = new TextDecoder('utf-8');
         let done = false;
+        
         while (!done) {
           const { value, done: readerDone } = await reader.read();
           done = readerDone;
+          
           if (value) {
             const chunk = decoder.decode(value, { stream: true });
             const match = chunk.match(/data: (.+)\n\n/);
@@ -112,21 +112,15 @@ export default {
         this.abortController = null;
       }
     },
+    
     async saveStory() {
       this.saving = true;
       try {
-        const response = await fetch('http://localhost:5000/save_story', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: this.storySummary.name,
-            conversation: this.conversation,
-          }),
+        const data = await api.post('/save_story', {
+          name: this.storySummary.name,
+          conversation: this.conversation,
         });
-        if (!response.ok) {
-          throw new Error('Failed to save the story');
-        }
-        const data = await response.json();
+        
         alert(data.message || 'Story saved successfully!');
       } catch (error) {
         console.error(error);
