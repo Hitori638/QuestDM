@@ -5,6 +5,8 @@ import re
 import json
 import threading
 from tinydb import TinyDB, Query
+from difflib import SequenceMatcher
+
 
 app = Flask(__name__)
 CORS(app)
@@ -27,6 +29,7 @@ StoryQuery = Query()
 last_story_summary = ""
 
 def construct_summary_prompt(conversation_text):
+    print("DEBUG: Constructing summary prompt with conversation of length:", len(conversation_text))
     return [
         {
             "role": "system",
@@ -35,7 +38,10 @@ def construct_summary_prompt(conversation_text):
                 "Your job is to generate:\n\n"
                 "1. A comprehensive **summary** of the story so far as a simple string\n"
                 "2. An **updated character_creation dictionary** containing ANY AND ALL characters\n\n"
-                "EXTREMELY IMPORTANT: You MUST follow the exact format below - do not add new fields, do not change the structure:\n"
+                "CRITICAL INSTRUCTIONS FOR JSON OUTPUT:\n"
+                "- Output ONLY valid, parseable JSON with NO explanations before or after\n"
+                "- Do NOT prefix your response with ```json or any other markdown\n"
+                "- Return EXACTLY this structure with NO modifications:\n"
                 "{\n"
                 '  "summary": "A detailed summary of the story progression.",\n'
                 '  "character_creation": {\n'
@@ -48,10 +54,20 @@ def construct_summary_prompt(conversation_text):
                 "    }\n"
                 "  }\n"
                 "}\n\n"
-                "DO NOT modify this structure. DO NOT add nested objects to summary. DO NOT add nested arrays. The summary field MUST be a single string. "
-                "ALL keys in the character_creation dictionary MUST EXACTLY MATCH the corresponding 'name' field for each character. "
-                "Ensure all strings are properly escaped with no newlines inside the strings. "
-                "All JSON properties must have commas between them."
+                "STRICT FORMAT REQUIREMENTS:\n"
+                "- The 'summary' field MUST be a single string with proper escaping for quotes (\\\")\n"
+                "- Character names as keys MUST EXACTLY MATCH the corresponding 'name' field values\n"
+                "- DO NOT include newlines within strings - use spaces instead\n"
+                "- All strings MUST be properly quoted with double quotes and escaped where needed\n"
+                "- Every property except the last in each object MUST have a comma after it\n"
+                "- DO NOT add any extra fields, comments, or explanations outside the JSON structure\n"
+                "- The output should start with a { character and end with a } character\n\n"
+                "SPECIAL CHARACTER HANDLING:\n"
+                "- Avoid using apostrophes in the summary text (use 'the crews mission' instead of 'crew's mission')\n"
+                "- If you must include character nicknames with quotes, use single quotes instead of double quotes\n"
+                "- Keep character names simple in the character_creation dictionary keys (e.g., use 'Sam Johnson' instead of 'Dr. Samuel \"Sam\" Johnson')\n"
+                "- Use character full names including titles in the 'name' field, not in the dictionary key\n\n"
+                "Your output MUST be machine-parseable JSON that can be processed by json.loads() in Python."
             )
         },
         {
@@ -112,38 +128,51 @@ def merge_conversation(existing_conversation, new_conversation):
     return existing_conversation
 
 def merge_characters(existing_chars, new_chars):
+    """
+    Merge character dictionaries with fuzzy name matching.
+    
+    Args:
+        existing_chars (dict): Existing characters dictionary
+        new_chars (dict): New characters dictionary to merge
+    
+    Returns:
+        dict: Merged characters dictionary
+    """
     if not isinstance(existing_chars, dict):
         existing_chars = {}
     if not isinstance(new_chars, dict):
         new_chars = {}
-    
-    merged_characters = existing_chars.copy()
-    
-    for char_id, new_char in new_chars.items():
-        if char_id in merged_characters:
-            for key, val in new_char.items():
-                if key == 'backstory' and merged_characters[char_id].get('backstory'):
    
-                    original_backstory = merged_characters[char_id]['backstory']
-                    if val != original_backstory and val:
-  
-                        merged_characters[char_id]['backstory'] = val
-                elif key == 'status' and val:
- 
-                    merged_characters[char_id][key] = val
-                else:
+    merged_characters = existing_chars.copy()
+   
+    for new_char_id, new_char in new_chars.items():
+   
+        matched = False
+        for existing_char_id, existing_char in merged_characters.items():
+            if fuzzy_match_name(new_char_id, existing_char_id):
         
-                    merged_characters[char_id][key] = val
-        else:
-
-            merged_characters[char_id] = new_char
-    
+                for key, val in new_char.items():
+                    if key == 'backstory' and existing_char.get('backstory'):
+                        original_backstory = existing_char['backstory']
+                        if val != original_backstory and val:
+                            merged_characters[existing_char_id]['backstory'] = val
+                    elif key == 'status' and val:
+                        merged_characters[existing_char_id][key] = val
+                    else:
+                        merged_characters[existing_char_id][key] = val
+                matched = True
+                break
+        
+  
+        if not matched:
+            merged_characters[new_char_id] = new_char
+   
     return merged_characters
 
 def process_summary_json(summary_text):
     """
-    Process and extract structured data from LLM-generated summary text.
-    Handles various JSON formats and issues like escape sequences and newlines.
+    Process and extract structured data from LLM-generated summary text using
+    a cascading approach with multiple parsing methods.
     
     Args:
         summary_text (str): The raw summary text from the LLM.
@@ -151,92 +180,322 @@ def process_summary_json(summary_text):
     Returns:
         dict: A dictionary with 'summary' and 'character_creation' keys.
     """
-   
+    import time  
     
-    try:
-        if summary_text.startswith("SUMMARY:"):
-            summary_text = summary_text[len("SUMMARY:"):].strip()
-        
+    print("\n" + "="*50)
+    print("DEBUG: Starting JSON parsing process")
+    print(f"DEBUG: Raw summary text preview: {summary_text[:150]}...")
+    print(f"DEBUG: Summary text length: {len(summary_text)} characters")
+    print("="*50 + "\n")
 
-        json_match = re.search(r'({.*})', summary_text, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(1)
-        else:
-            json_str = summary_text
+    default_result = {
+        "summary": "",
+        "character_creation": {}
+    }
+    
+
+    def clean_text(text):
+        original_text = text
+        
+   
+        for prefix in ["SUMMARY:", "Here's the summary:", "JSON:", "Output:"]:
+            if text.strip().startswith(prefix):
+                text = text[len(prefix):].strip()
+                print(f"DEBUG: Removed prefix: '{prefix}'")
         
  
-        json_str = re.sub(r'\\+"', '"', json_str)
+        if "```" in text:
+            text = re.sub(r'```(?:json)?\n([\s\S]*?)\n```', r'\1', text)
+            print("DEBUG: Removed markdown code blocks")
+        
+    
+        first_brace = text.find('{')
+        last_brace = text.rfind('}')
+        if first_brace != -1 and last_brace != -1:
+            text = text[first_brace:last_brace+1]
+            print(f"DEBUG: Extracted JSON between braces (chars {first_brace}-{last_brace})")
+        
+        result = text.strip()
+        if result != original_text:
+            print(f"DEBUG: Cleaned text preview: {result[:100]}...")
+        
+        return result
+    
 
-        json_str = re.sub(r':\s*\\+([^,}\s"]+)', r':"\1"', json_str)
+    start_time = time.time()
+    try:
+        print("\nDEBUG: ATTEMPTING METHOD 1 - Direct JSON parsing")
+        cleaned_text = clean_text(summary_text)
+        data = json.loads(cleaned_text)
+        
+   
+        if "summary" in data and "character_creation" in data:
+     
+            if isinstance(data["summary"], str) and isinstance(data["character_creation"], dict):
+                end_time = time.time()
+                print(f"DEBUG: ✅ Method 1 (direct parsing) SUCCEEDED in {end_time-start_time:.3f}s")
+                print(f"DEBUG: Found summary of length: {len(data['summary'])} chars")
+                print(f"DEBUG: Found {len(data['character_creation'])} characters")
+                print(f"DEBUG: Characters: {', '.join(list(data['character_creation'].keys()))}")
+                return data
+            else:
+                print("DEBUG: Invalid data structure - summary or character_creation has wrong type")
+        else:
+            print("DEBUG: Missing required fields in parsed JSON")
+    except json.JSONDecodeError as json_err:
+        print(f"DEBUG: Method 1 (direct parsing) failed with JSONDecodeError: {json_err}")
+        print(f"DEBUG: Error at position {json_err.pos}: '{cleaned_text[max(0, json_err.pos-20):min(len(cleaned_text), json_err.pos+20)]}'")
+    except Exception as e:
+        print(f"DEBUG: Method 1 (direct parsing) failed: {str(e)}")
+    end_time = time.time()
+    print(f"DEBUG: ❌ Method 1 failed in {end_time-start_time:.3f}s")
+    
 
-        json_str = re.sub(r'("\s*:\s*"[^"]*)[\n\r]+\s*[\n\r]+\s*([^"]*")', r'\1 \2', json_str)
+    start_time = time.time()
+    try:
+        print("\nDEBUG: ATTEMPTING METHOD 2 - JSON fixes")
+        cleaned_text = clean_text(summary_text)
+        original_text = cleaned_text
+        fixes_applied = []
         
 
-        try:
-            data = json.loads(json_str)
-            return data
-        except json.JSONDecodeError as e:
-            print(f"DEBUG: Initial JSON parsing failed: {e}")
+        fixed_text = re.sub(r'([{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', cleaned_text)
+        if fixed_text != cleaned_text:
+            fixes_applied.append("Quoted unquoted keys")
+            cleaned_text = fixed_text
+        
+  
+        fixed_text = re.sub(r"'([^']*)'", r'"\1"', cleaned_text)
+        if fixed_text != cleaned_text:
+            fixes_applied.append("Converted single quotes to double quotes")
+            cleaned_text = fixed_text
+        
+
+        fixed_text = re.sub(r',\s*([}\]])', r'\1', cleaned_text)
+        if fixed_text != cleaned_text:
+            fixes_applied.append("Removed trailing commas")
+            cleaned_text = fixed_text
+        
+
+        fixed_text = re.sub(r'}\s*{', r'},{', cleaned_text)
+        if fixed_text != cleaned_text:
+            fixes_applied.append("Added missing commas")
+            cleaned_text = fixed_text
+        
+        if fixes_applied:
+            print(f"DEBUG: Applied fixes: {', '.join(fixes_applied)}")
+            if original_text != cleaned_text:
+                print(f"DEBUG: Original: {original_text[:50]}...")
+                print(f"DEBUG: Fixed: {cleaned_text[:50]}...")
+        
+        data = json.loads(cleaned_text)
+        
+
+        if "summary" in data and "character_creation" in data:
+            if isinstance(data["summary"], str) and isinstance(data["character_creation"], dict):
+                end_time = time.time()
+                print(f"DEBUG: ✅ Method 2 (JSON fixes) SUCCEEDED in {end_time-start_time:.3f}s")
+                print(f"DEBUG: Found summary of length: {len(data['summary'])} chars")
+                print(f"DEBUG: Found {len(data['character_creation'])} characters")
+                print(f"DEBUG: Characters: {', '.join(list(data['character_creation'].keys()))}")
+                return data
+            else:
+                print("DEBUG: Invalid data structure after fixes")
+        else:
+            print("DEBUG: Missing required fields after fixes")
+    except json.JSONDecodeError as json_err:
+        print(f"DEBUG: Method 2 (JSON fixes) failed with JSONDecodeError: {json_err}")
+        print(f"DEBUG: Error at position {json_err.pos}: '{cleaned_text[max(0, json_err.pos-20):min(len(cleaned_text), json_err.pos+20)]}'")
+    except Exception as e:
+        print(f"DEBUG: Method 2 (JSON fixes) failed: {str(e)}")
+    end_time = time.time()
+    print(f"DEBUG: ❌ Method 2 failed in {end_time-start_time:.3f}s")
+    
+
+    start_time = time.time()
+    try:
+        print("\nDEBUG: ATTEMPTING METHOD 3 - Using demjson3 library")
+        import demjson3
+        cleaned_text = clean_text(summary_text)
+        
+        print("DEBUG: Parsing with demjson3...")
+        data = demjson3.decode(cleaned_text)
+        
+   
+        if "summary" in data and "character_creation" in data:
+            if isinstance(data["summary"], str) and isinstance(data["character_creation"], dict):
+                end_time = time.time()
+                print(f"DEBUG: ✅ Method 3 (demjson3) SUCCEEDED in {end_time-start_time:.3f}s")
+                print(f"DEBUG: Found summary of length: {len(data['summary'])} chars")
+                print(f"DEBUG: Found {len(data['character_creation'])} characters")
+                print(f"DEBUG: Characters: {', '.join(list(data['character_creation'].keys()))}")
+                return data
+            else:
+                print("DEBUG: Invalid data structure from demjson3")
+        else:
+            print("DEBUG: Missing required fields in demjson3 output")
+    except ImportError:
+        print("DEBUG: ❓ demjson3 not available, skipping method 3")
+    except Exception as e:
+        print(f"DEBUG: Method 3 (demjson3) failed: {str(e)}")
+    end_time = time.time()
+    print(f"DEBUG: ❌ Method 3 failed in {end_time-start_time:.3f}s")
+    
+
+    start_time = time.time()
+    try:
+        print("\nDEBUG: ATTEMPTING METHOD 4 - Advanced regex extraction")
+        result = default_result.copy()
+        cleaned_text = clean_text(summary_text)
+        
+
+        print("DEBUG: Extracting summary field...")
+        summary_pattern = r'"summary"\s*:\s*"((?:\\"|[^"])*)"'
+        summary_match = re.search(summary_pattern, cleaned_text, re.DOTALL)
+        if summary_match:
+            summary = summary_match.group(1)
+    
+            summary = summary.replace('\\"', '"').replace('\\\\', '\\')
+            result["summary"] = summary
+            print(f"DEBUG: Successfully extracted summary ({len(summary)} chars)")
+        else:
+            print("DEBUG: Could not find summary field with regex")
+        
+  
+        print("DEBUG: Extracting character_creation section...")
+        char_section_pattern = r'"character_creation"\s*:\s*{([\s\S]*?)}'
+        char_section_match = re.search(char_section_pattern, cleaned_text, re.DOTALL)
+        
+        if char_section_match:
+            char_section = char_section_match.group(1)
+            print(f"DEBUG: Found character_creation section ({len(char_section)} chars)")
             
-     
-            result = {
-                "summary": "",
-                "character_creation": {}
+
+            char_pattern = r'"([^"]+)"\s*:\s*{([^{}]*)(?:{[^{}]*}[^{}]*)*?}'
+            char_matches = list(re.finditer(char_pattern, char_section))
+            print(f"DEBUG: Found {len(char_matches)} potential character entries")
+            
+            for char_match in char_matches:
+                char_name = char_match.group(1).replace('\\', '').strip()
+                char_content = char_match.group(2)
+                
+                print(f"DEBUG: Processing character: {char_name}")
+                
+      
+                char_data = {
+                    "name": char_name,
+                    "race": "Unknown",
+                    "class": "Unknown",
+                    "backstory": "",
+                    "status": ""
+                }
+                
+        
+                for field in ["name", "race", "class", "backstory", "status"]:
+                    field_pattern = fr'"{field}"\s*:\s*"((?:\\"|[^"])*)"'
+                    field_match = re.search(field_pattern, char_content, re.DOTALL)
+                    if field_match:
+              
+                        value = field_match.group(1).replace('\\"', '"').replace('\\\\', '\\')
+                        char_data[field] = value
+                        print(f"DEBUG:   - Found {field}: {value[:30]}..." if len(value) > 30 else f"DEBUG:   - Found {field}: {value}")
+                
+                result["character_creation"][char_name] = char_data
+            
+            print(f"DEBUG: Successfully extracted {len(result['character_creation'])} characters")
+        else:
+            print("DEBUG: Could not find character_creation section with regex")
+        
+        if result["summary"] or result["character_creation"]:
+            end_time = time.time()
+            print(f"DEBUG: ✅ Method 4 (regex extraction) SUCCEEDED in {end_time-start_time:.3f}s")
+            return result
+        else:
+            print("DEBUG: No useful data extracted with regex method")
+    except Exception as e:
+        print(f"DEBUG: Method 4 (regex extraction) failed: {str(e)}")
+        import traceback
+        print(f"DEBUG: Traceback: {traceback.format_exc()}")
+    end_time = time.time()
+    print(f"DEBUG: ❌ Method 4 failed in {end_time-start_time:.3f}s")
+    
+
+    start_time = time.time()
+    try:
+        print("\nDEBUG: ATTEMPTING METHOD 5 - Manual text parsing (last resort)")
+        result = default_result.copy()
+        
+
+        print("DEBUG: Looking for any summary-like content...")
+        summary_lines = re.findall(r'summary.*?["\']([^"\']+)["\']', summary_text, re.IGNORECASE | re.DOTALL)
+        if summary_lines:
+            result["summary"] = summary_lines[0]
+            print(f"DEBUG: Found possible summary: {summary_lines[0][:50]}...")
+        else:
+
+            fallback_summary = summary_text[:min(100, len(summary_text))]
+            if len(summary_text) > 100:
+                fallback_summary += "..."
+            result["summary"] = fallback_summary
+            print(f"DEBUG: Using fallback summary: {fallback_summary}")
+        
+
+        print("DEBUG: Looking for character names in text...")
+        char_matches = re.findall(r'(?:name|character)["\'\s:]+([A-Z][a-zA-Z\s]+)', summary_text)
+        print(f"DEBUG: Found {len(char_matches)} potential character names")
+        
+        for char_name in char_matches:
+            char_name = char_name.strip()
+            if not char_name:
+                continue
+            
+            print(f"DEBUG: Processing potential character: {char_name}")    
+            char_data = {
+                "name": char_name,
+                "race": "Unknown",
+                "class": "Unknown",
+                "backstory": "",
+                "status": ""
             }
             
- 
-            summary_match = re.search(r'"summary"\s*:\s*"([^"]+)"', json_str)
-            if summary_match:
-                result["summary"] = summary_match.group(1)
+
+            char_vicinity = summary_text[max(0, summary_text.find(char_name)-100):
+                                         min(len(summary_text), summary_text.find(char_name)+200)]
             
-     
-            char_section_match = re.search(r'"character_creation"\s*:\s*{(.*)}', json_str, re.DOTALL)
-            if char_section_match:
-                char_section = char_section_match.group(1)
-                
-  
-                char_pattern = r'"([^"]+)"\s*:\s*{([^{}]*(?:{[^{}]*}[^{}]*)*?)}'
-                for char_match in re.finditer(char_pattern, char_section):
-                    char_name = char_match.group(1).replace('"', '').replace('\\', '').strip()
-                    char_content = char_match.group(2)
-                    
-              
-                    if char_name == "character_creation":
-                        continue
-                    
-                
-                    char_data = {
-                        "name": char_name,
-                        "race": "Unknown",
-                        "class": "Unknown",
-                        "backstory": "",
-                        "status": ""
-                    }
-                    
+            for field in ["race", "class"]:
+                field_match = re.search(fr'{field}["\'\s:]+([A-Za-z]+)', char_vicinity, re.IGNORECASE)
+                if field_match:
+                    char_data[field] = field_match.group(1)
+                    print(f"DEBUG:   - Found {field}: {field_match.group(1)}")
             
-                    prop_pattern = r'"([^"]+)"\s*:\s*"?([^",}]*)"?'
-                    for prop_match in re.finditer(prop_pattern, char_content):
-                        prop_name = prop_match.group(1).strip()
-                        prop_value = prop_match.group(2).strip()
-                        
-                  
-                        prop_value = re.sub(r'[\n\r\t]+', ' ', prop_value)
-                        prop_value = re.sub(r'\\+', '', prop_value)
-                        
-              
-                        if prop_name in ["name", "race", "class", "backstory", "status"]:
-                            char_data[prop_name] = prop_value
-                    
-          
-                    result["character_creation"][char_name] = char_data
-            
-            return result
+            result["character_creation"][char_name] = char_data
+        
+        end_time = time.time()
+        print(f"DEBUG: ⚠️ Method 5 (manual text parsing) used as FALLBACK in {end_time-start_time:.3f}s")
+        print(f"DEBUG: Created summary of length: {len(result['summary'])} chars")
+        print(f"DEBUG: Extracted {len(result['character_creation'])} characters")
+        if result['character_creation']:
+            print(f"DEBUG: Characters: {', '.join(list(result['character_creation'].keys()))}")
+        return result
     except Exception as e:
-        print(f"DEBUG: Error processing summary JSON: {e}")
-        return {
-            "summary": summary_text[:100] + "..." if len(summary_text) > 100 else summary_text,
-            "character_creation": {}
-        }
+        print(f"DEBUG: Method 5 (manual text parsing) failed: {str(e)}")
+        import traceback
+        print(f"DEBUG: Traceback: {traceback.format_exc()}")
+    end_time = time.time()
+    print(f"DEBUG: ❌ Method 5 failed in {end_time-start_time:.3f}s")
+    
+
+    print("\nDEBUG: ⚠️ ALL PARSING METHODS FAILED, using raw text fallback")
+    default_result["summary"] = summary_text[:min(200, len(summary_text))]
+    if len(summary_text) > 200:
+        default_result["summary"] += "..."
+    
+    print("="*50)
+    print(f"DEBUG: Returning fallback summary: {default_result['summary'][:50]}...")
+    print("DEBUG: No characters extracted")
+    print("="*50 + "\n")
+    
+    return default_result
 
 def summarize_and_save(story_name, threshold=None):
     if threshold is None:
@@ -371,7 +630,15 @@ def transform_conversation_for_display(conversation):
             transformed.append(new_msg)
     return transformed
 
+def fuzzy_match_name(name1, name2, threshold=0.8):
 
+
+    normalized_name1 = name1.lower().replace(' ', '')
+    normalized_name2 = name2.lower().replace(' ', '')
+    
+    similarity = SequenceMatcher(None, normalized_name1, normalized_name2).ratio()
+    
+    return similarity >= threshold
 @app.route('/chat', methods=['POST'])
 def chat():
     data = request.get_json()
