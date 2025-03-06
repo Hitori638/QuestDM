@@ -193,22 +193,18 @@ def process_summary_json(summary_text):
         "character_creation": {}
     }
     
-
     def clean_text(text):
         original_text = text
         
-   
         for prefix in ["SUMMARY:", "Here's the summary:", "JSON:", "Output:"]:
             if text.strip().startswith(prefix):
                 text = text[len(prefix):].strip()
                 print(f"DEBUG: Removed prefix: '{prefix}'")
         
- 
         if "```" in text:
             text = re.sub(r'```(?:json)?\n([\s\S]*?)\n```', r'\1', text)
             print("DEBUG: Removed markdown code blocks")
         
-    
         first_brace = text.find('{')
         last_brace = text.rfind('}')
         if first_brace != -1 and last_brace != -1:
@@ -221,19 +217,17 @@ def process_summary_json(summary_text):
         
         return result
     
-
+    # METHOD 1: Direct JSON parsing
     start_time = time.time()
     try:
         print("\nDEBUG: ATTEMPTING METHOD 1 - Direct JSON parsing")
         cleaned_text = clean_text(summary_text)
         data = json.loads(cleaned_text)
         
-   
         if "summary" in data and "character_creation" in data:
-     
             if isinstance(data["summary"], str) and isinstance(data["character_creation"], dict):
                 end_time = time.time()
-                print(f"DEBUG: ✅ Method 1 (direct parsing) SUCCEEDED in {end_time-start_time:.3f}s")
+                print(f"DEBUG: Method 1 (direct parsing) SUCCEEDED in {end_time-start_time:.3f}s")
                 print(f"DEBUG: Found summary of length: {len(data['summary'])} chars")
                 print(f"DEBUG: Found {len(data['character_creation'])} characters")
                 print(f"DEBUG: Characters: {', '.join(list(data['character_creation'].keys()))}")
@@ -248,9 +242,9 @@ def process_summary_json(summary_text):
     except Exception as e:
         print(f"DEBUG: Method 1 (direct parsing) failed: {str(e)}")
     end_time = time.time()
-    print(f"DEBUG: ❌ Method 1 failed in {end_time-start_time:.3f}s")
+    print(f"DEBUG: Method 1 failed in {end_time-start_time:.3f}s")
     
-
+    # METHOD 2: JSON fixes
     start_time = time.time()
     try:
         print("\nDEBUG: ATTEMPTING METHOD 2 - JSON fixes")
@@ -258,25 +252,21 @@ def process_summary_json(summary_text):
         original_text = cleaned_text
         fixes_applied = []
         
-
         fixed_text = re.sub(r'([{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', cleaned_text)
         if fixed_text != cleaned_text:
             fixes_applied.append("Quoted unquoted keys")
             cleaned_text = fixed_text
         
-  
         fixed_text = re.sub(r"'([^']*)'", r'"\1"', cleaned_text)
         if fixed_text != cleaned_text:
             fixes_applied.append("Converted single quotes to double quotes")
             cleaned_text = fixed_text
         
-
         fixed_text = re.sub(r',\s*([}\]])', r'\1', cleaned_text)
         if fixed_text != cleaned_text:
             fixes_applied.append("Removed trailing commas")
             cleaned_text = fixed_text
         
-
         fixed_text = re.sub(r'}\s*{', r'},{', cleaned_text)
         if fixed_text != cleaned_text:
             fixes_applied.append("Added missing commas")
@@ -290,11 +280,10 @@ def process_summary_json(summary_text):
         
         data = json.loads(cleaned_text)
         
-
         if "summary" in data and "character_creation" in data:
             if isinstance(data["summary"], str) and isinstance(data["character_creation"], dict):
                 end_time = time.time()
-                print(f"DEBUG: ✅ Method 2 (JSON fixes) SUCCEEDED in {end_time-start_time:.3f}s")
+                print(f"DEBUG: Method 2 (JSON fixes) SUCCEEDED in {end_time-start_time:.3f}s")
                 print(f"DEBUG: Found summary of length: {len(data['summary'])} chars")
                 print(f"DEBUG: Found {len(data['character_creation'])} characters")
                 print(f"DEBUG: Characters: {', '.join(list(data['character_creation'].keys()))}")
@@ -309,9 +298,9 @@ def process_summary_json(summary_text):
     except Exception as e:
         print(f"DEBUG: Method 2 (JSON fixes) failed: {str(e)}")
     end_time = time.time()
-    print(f"DEBUG: ❌ Method 2 failed in {end_time-start_time:.3f}s")
+    print(f"DEBUG: Method 2 failed in {end_time-start_time:.3f}s")
     
-
+    # METHOD 3: Using demjson3 library
     start_time = time.time()
     try:
         print("\nDEBUG: ATTEMPTING METHOD 3 - Using demjson3 library")
@@ -321,11 +310,10 @@ def process_summary_json(summary_text):
         print("DEBUG: Parsing with demjson3...")
         data = demjson3.decode(cleaned_text)
         
-   
         if "summary" in data and "character_creation" in data:
             if isinstance(data["summary"], str) and isinstance(data["character_creation"], dict):
                 end_time = time.time()
-                print(f"DEBUG: ✅ Method 3 (demjson3) SUCCEEDED in {end_time-start_time:.3f}s")
+                print(f"DEBUG: Method 3 (demjson3) SUCCEEDED in {end_time-start_time:.3f}s")
                 print(f"DEBUG: Found summary of length: {len(data['summary'])} chars")
                 print(f"DEBUG: Found {len(data['character_creation'])} characters")
                 print(f"DEBUG: Characters: {', '.join(list(data['character_creation'].keys()))}")
@@ -335,33 +323,31 @@ def process_summary_json(summary_text):
         else:
             print("DEBUG: Missing required fields in demjson3 output")
     except ImportError:
-        print("DEBUG: ❓ demjson3 not available, skipping method 3")
+        print("DEBUG: demjson3 not available, skipping method 3")
     except Exception as e:
         print(f"DEBUG: Method 3 (demjson3) failed: {str(e)}")
     end_time = time.time()
-    print(f"DEBUG: ❌ Method 3 failed in {end_time-start_time:.3f}s")
+    print(f"DEBUG: Method 3 failed in {end_time-start_time:.3f}s")
     
-
+    # METHOD 4: Advanced regex extraction
     start_time = time.time()
     try:
         print("\nDEBUG: ATTEMPTING METHOD 4 - Advanced regex extraction")
         result = default_result.copy()
         cleaned_text = clean_text(summary_text)
         
-
         print("DEBUG: Extracting summary field...")
         summary_pattern = r'"summary"\s*:\s*"((?:\\"|[^"])*)"'
         summary_match = re.search(summary_pattern, cleaned_text, re.DOTALL)
         if summary_match:
             summary = summary_match.group(1)
-    
+            
             summary = summary.replace('\\"', '"').replace('\\\\', '\\')
             result["summary"] = summary
             print(f"DEBUG: Successfully extracted summary ({len(summary)} chars)")
         else:
             print("DEBUG: Could not find summary field with regex")
         
-  
         print("DEBUG: Extracting character_creation section...")
         char_section_pattern = r'"character_creation"\s*:\s*{([\s\S]*?)}'
         char_section_match = re.search(char_section_pattern, cleaned_text, re.DOTALL)
@@ -370,7 +356,6 @@ def process_summary_json(summary_text):
             char_section = char_section_match.group(1)
             print(f"DEBUG: Found character_creation section ({len(char_section)} chars)")
             
-
             char_pattern = r'"([^"]+)"\s*:\s*{([^{}]*)(?:{[^{}]*}[^{}]*)*?}'
             char_matches = list(re.finditer(char_pattern, char_section))
             print(f"DEBUG: Found {len(char_matches)} potential character entries")
@@ -381,7 +366,6 @@ def process_summary_json(summary_text):
                 
                 print(f"DEBUG: Processing character: {char_name}")
                 
-      
                 char_data = {
                     "name": char_name,
                     "race": "Unknown",
@@ -390,12 +374,10 @@ def process_summary_json(summary_text):
                     "status": ""
                 }
                 
-        
                 for field in ["name", "race", "class", "backstory", "status"]:
                     field_pattern = fr'"{field}"\s*:\s*"((?:\\"|[^"])*)"'
                     field_match = re.search(field_pattern, char_content, re.DOTALL)
                     if field_match:
-              
                         value = field_match.group(1).replace('\\"', '"').replace('\\\\', '\\')
                         char_data[field] = value
                         print(f"DEBUG:   - Found {field}: {value[:30]}..." if len(value) > 30 else f"DEBUG:   - Found {field}: {value}")
@@ -408,7 +390,7 @@ def process_summary_json(summary_text):
         
         if result["summary"] or result["character_creation"]:
             end_time = time.time()
-            print(f"DEBUG: ✅ Method 4 (regex extraction) SUCCEEDED in {end_time-start_time:.3f}s")
+            print(f"DEBUG: Method 4 (regex extraction) SUCCEEDED in {end_time-start_time:.3f}s")
             return result
         else:
             print("DEBUG: No useful data extracted with regex method")
@@ -417,29 +399,26 @@ def process_summary_json(summary_text):
         import traceback
         print(f"DEBUG: Traceback: {traceback.format_exc()}")
     end_time = time.time()
-    print(f"DEBUG: ❌ Method 4 failed in {end_time-start_time:.3f}s")
+    print(f"DEBUG: Method 4 failed in {end_time-start_time:.3f}s")
     
-
+    # METHOD 5: Manual text parsing (last resort)
     start_time = time.time()
     try:
         print("\nDEBUG: ATTEMPTING METHOD 5 - Manual text parsing (last resort)")
         result = default_result.copy()
         
-
         print("DEBUG: Looking for any summary-like content...")
         summary_lines = re.findall(r'summary.*?["\']([^"\']+)["\']', summary_text, re.IGNORECASE | re.DOTALL)
         if summary_lines:
             result["summary"] = summary_lines[0]
             print(f"DEBUG: Found possible summary: {summary_lines[0][:50]}...")
         else:
-
             fallback_summary = summary_text[:min(100, len(summary_text))]
             if len(summary_text) > 100:
                 fallback_summary += "..."
             result["summary"] = fallback_summary
             print(f"DEBUG: Using fallback summary: {fallback_summary}")
         
-
         print("DEBUG: Looking for character names in text...")
         char_matches = re.findall(r'(?:name|character)["\'\s:]+([A-Z][a-zA-Z\s]+)', summary_text)
         print(f"DEBUG: Found {len(char_matches)} potential character names")
@@ -458,9 +437,8 @@ def process_summary_json(summary_text):
                 "status": ""
             }
             
-
             char_vicinity = summary_text[max(0, summary_text.find(char_name)-100):
-                                         min(len(summary_text), summary_text.find(char_name)+200)]
+                                        min(len(summary_text), summary_text.find(char_name)+200)]
             
             for field in ["race", "class"]:
                 field_match = re.search(fr'{field}["\'\s:]+([A-Za-z]+)', char_vicinity, re.IGNORECASE)
@@ -471,7 +449,7 @@ def process_summary_json(summary_text):
             result["character_creation"][char_name] = char_data
         
         end_time = time.time()
-        print(f"DEBUG: ⚠️ Method 5 (manual text parsing) used as FALLBACK in {end_time-start_time:.3f}s")
+        print(f"DEBUG: Method 5 (manual text parsing) used as FALLBACK in {end_time-start_time:.3f}s")
         print(f"DEBUG: Created summary of length: {len(result['summary'])} chars")
         print(f"DEBUG: Extracted {len(result['character_creation'])} characters")
         if result['character_creation']:
@@ -482,10 +460,10 @@ def process_summary_json(summary_text):
         import traceback
         print(f"DEBUG: Traceback: {traceback.format_exc()}")
     end_time = time.time()
-    print(f"DEBUG: ❌ Method 5 failed in {end_time-start_time:.3f}s")
+    print(f"DEBUG: Method 5 failed in {end_time-start_time:.3f}s")
     
 
-    print("\nDEBUG: ⚠️ ALL PARSING METHODS FAILED, using raw text fallback")
+    print("\nDEBUG: ALL PARSING METHODS FAILED, using raw text fallback")
     default_result["summary"] = summary_text[:min(200, len(summary_text))]
     if len(summary_text) > 200:
         default_result["summary"] += "..."
@@ -501,19 +479,13 @@ def summarize_and_save(story_name, threshold=None):
     if threshold is None:
         threshold = model_accuracy_threshold
     
+    print(f"DEBUG: Starting summarization check for story '{story_name}'")
     llm_conv = llm_conversations.get(story_name, [])
     
 
     if len(llm_conv) < 3:
+        print("DEBUG: Not enough messages for summarization (< 3)")
         return llm_conv
-    
-
-    user_messages = [msg for msg in llm_conv[3:] if msg["role"] == "user"]
-    
-
-    if len(user_messages) < threshold:
-        return llm_conv
-    
 
     has_summary = (
         len(llm_conv) > 3 and
@@ -521,27 +493,58 @@ def summarize_and_save(story_name, threshold=None):
         "SUMMARY:" in llm_conv[3]["content"]
     )
     
-
-    start_index = 4 if has_summary else 3
+    print(f"DEBUG: Has existing summary: {has_summary}")
     
-
-    existing_summary = ""
     if has_summary:
+
+        messages_after_summary = llm_conv[4:]
+        user_messages_after_summary = [msg for msg in messages_after_summary if msg["role"] == "user"]
+        
+        print(f"DEBUG: Messages since last summary: {len(messages_after_summary)}")
+        print(f"DEBUG: User messages since last summary: {len(user_messages_after_summary)}")
+        
+
+        if len(user_messages_after_summary) < threshold:
+            print(f"DEBUG: Not enough new messages for re-summarization ({len(user_messages_after_summary)} < {threshold})")
+            return llm_conv
+
+        print(f"DEBUG: Threshold reached, re-summarizing {len(user_messages_after_summary)} new user messages")
+
         existing_summary = llm_conv[3]["content"].replace("SUMMARY:", "", 1).strip()
-    
+        
 
-    new_content = "\n\n".join(
-        f"{msg['role'].upper()}: {msg['content']}" for msg in llm_conv[start_index:]
-    )
-    
+        new_content = "\n\n".join(
+            f"{msg['role'].upper()}: {msg['content']}" for msg in messages_after_summary
+        )
+        
 
-    if existing_summary:
         conversation_text = f"PREVIOUS SUMMARY: {existing_summary}\n\n{new_content}"
     else:
-        conversation_text = new_content
+   
+        messages_to_summarize = llm_conv[3:]
+        user_messages_to_summarize = [msg for msg in messages_to_summarize if msg["role"] == "user"]
+        
+        print(f"DEBUG: Total non-system messages: {len(messages_to_summarize)}")
+        print(f"DEBUG: User messages: {len(user_messages_to_summarize)}")
+        
 
+        if len(user_messages_to_summarize) < threshold:
+            print(f"DEBUG: Not enough messages for first summarization ({len(user_messages_to_summarize)} < {threshold})")
+            return llm_conv
+            
+  
+        print(f"DEBUG: Threshold reached, creating first summary for {len(user_messages_to_summarize)} user messages")
+        
+   
+        conversation_text = "\n\n".join(
+            f"{msg['role'].upper()}: {msg['content']}" for msg in messages_to_summarize
+        )
+    
+
+    print(f"DEBUG: Constructing summary prompt with conversation text of length: {len(conversation_text)}")
     summarization_prompt = construct_summary_prompt(conversation_text)
     
+    print(f"DEBUG: Sending summarization request to model: {current_model}")
     response = ollama.chat(
         model=current_model,
         messages=summarization_prompt,
@@ -557,38 +560,59 @@ def summarize_and_save(story_name, threshold=None):
     else:
         new_summary = "Failed to generate summary."
     
-    print(f"DEBUG: Raw summary response: {new_summary}")
+    print(f"DEBUG: Received raw summary response of length: {len(new_summary)}")
     
 
     processed_summary = process_summary_json(new_summary)
-
     summary_text = processed_summary.get("summary", "")
+    
+    print(f"DEBUG: Extracted summary text of length: {len(summary_text)}")
     
 
     summary_message = {"role": "assistant", "content": f"SUMMARY: {summary_text}"}
     
 
-    recent_messages_to_keep = threshold 
+    recent_messages_to_keep = threshold
     
 
     new_llm_conv = llm_conv[:3] + [summary_message]
     
 
-    if len(llm_conv) > start_index + recent_messages_to_keep:
-        new_llm_conv += llm_conv[-(recent_messages_to_keep):]
+    if has_summary:
+   
+        if len(llm_conv) > 4 + recent_messages_to_keep:
+
+            new_llm_conv += llm_conv[-(recent_messages_to_keep):]
+            print(f"DEBUG: Keeping {recent_messages_to_keep} most recent messages in the new conversation")
+        else:
+
+            new_llm_conv += llm_conv[4:]
+            print(f"DEBUG: Keeping all {len(llm_conv) - 4} messages after the existing summary")
     else:
-        new_llm_conv += llm_conv[start_index:]
+
+        if len(llm_conv) > 3 + recent_messages_to_keep:
+   
+            new_llm_conv += llm_conv[-(recent_messages_to_keep):]
+            print(f"DEBUG: Keeping {recent_messages_to_keep} most recent messages for first summary")
+        else:
+
+            new_llm_conv += llm_conv[3:]
+            print(f"DEBUG: Keeping all {len(llm_conv) - 3} messages after system prompts for first summary")
+    
+    print(f"DEBUG: New conversation structure: {len(new_llm_conv)} messages total")
+    print(f"DEBUG: - System prompts: 3 messages")
+    print(f"DEBUG: - Summary: 1 message")
+    print(f"DEBUG: - Recent messages: {len(new_llm_conv) - 4} messages")
     
 
     story = story_creation_table.get(StoryQuery.name == story_name)
     if story:
-
         if 'character_creation' in processed_summary and processed_summary['character_creation']:
             existing_characters = story.get('characters', {})
             if not isinstance(existing_characters, dict):
                 existing_characters = {}
             
-
+  
             if isinstance(existing_characters, list):
                 char_dict = {}
                 for char in existing_characters:
@@ -596,16 +620,16 @@ def summarize_and_save(story_name, threshold=None):
                         char_dict[char['name']] = char
                 existing_characters = char_dict
             
-
+  
             merged_characters = merge_characters(existing_characters, processed_summary['character_creation'])
             
-
+    
             story_creation_table.update(
                 {'characters': merged_characters},
                 StoryQuery.name == story_name
             )
 
-
+  
         story_creation_table.update(
             {
                 "conversation_history": conversations.get(story_name, []),
@@ -695,16 +719,22 @@ def chat():
     
 
     if story_name in llm_conversations and llm_conversations[story_name]:
+
         llm_conversations[story_name][1] = story_details_prompt
         llm_conversations[story_name][2] = character_prompt
+        print(f"DEBUG: Using existing in-memory conversation for story '{story_name}'")
     else:
+
+        print(f"DEBUG: Loading conversation for story '{story_name}' from database")
         saved_llm_memory = story.get("llm_memory", [])
         if saved_llm_memory and len(saved_llm_memory) >= 3:
             llm_conversations[story_name] = saved_llm_memory
+
             llm_conversations[story_name][0] = initial_prompt
             llm_conversations[story_name][1] = story_details_prompt
             llm_conversations[story_name][2] = character_prompt
         else:
+
             llm_conversations[story_name] = [initial_prompt, story_details_prompt, character_prompt]
     
 
@@ -713,30 +743,87 @@ def chat():
         if not conversations[story_name]:
             conversations[story_name] = [initial_prompt, story_details_prompt, character_prompt]
     
+
     user_message = {"role": "user", "content": user_input}
     conversations[story_name].append(user_message)
     llm_conversations[story_name].append(user_message)
+    
 
+    should_summarize = False
+    if len(llm_conversations[story_name]) >= 3:
+  
+        has_summary = (
+            len(llm_conversations[story_name]) > 3 and
+            llm_conversations[story_name][3]["role"] == "assistant" and
+            "SUMMARY:" in llm_conversations[story_name][3]["content"]
+        )
+        
+        if has_summary:
+            # Count messages after the summary sandwich
+            messages_after_summary = llm_conversations[story_name][4:]
+            user_messages = [msg for msg in messages_after_summary if msg["role"] == "user"]
+            should_summarize = len(user_messages) >= model_accuracy_threshold
+            
+            print(f"DEBUG: Found existing summary sandwich structure")
+            print(f"DEBUG: User messages since last summary: {len(user_messages)}/{model_accuracy_threshold}")
+        else:
+
+            messages_after_system = llm_conversations[story_name][3:]
+            user_messages = [msg for msg in messages_after_system if msg["role"] == "user"]
+            should_summarize = len(user_messages) >= model_accuracy_threshold
+            
+            print(f"DEBUG: No existing summary found")
+            print(f"DEBUG: Total user messages: {len(user_messages)}/{model_accuracy_threshold}")
+        
+        print(f"DEBUG: Should summarize: {should_summarize}")
+    
+
+    if should_summarize:
+        print("DEBUG: Threshold reached, summarizing before generating response")
+        updated_conv = summarize_and_save(story_name)
+        
+    
+        if updated_conv:
+            llm_conversations[story_name] = updated_conv
+            print(f"DEBUG: Summarization complete, new conversation length: {len(llm_conversations[story_name])}")
+            
+   
+            story_creation_table.update(
+                {
+                    "llm_memory": llm_conversations[story_name]
+                },
+                StoryQuery.name == story_name
+            )
+        else:
+            print("DEBUG: Summarization failed or returned empty conversation")
+        
+        print("DEBUG: Proceeding with response generation")
+    
     def generate():
         print("DEBUG: Starting stream for story:", story_name)
         stream = ollama.chat(
-        model=current_model,
-        messages=llm_conversations[story_name],
-        stream=True,
-        options={"num_ctx": current_context_size})
+            model=current_model,
+            messages=llm_conversations[story_name],
+            stream=True,
+            options={"num_ctx": current_context_size}
+        )
+        
         response_accumulated = ""
         inside_think = False
         think_buffer = ""
         aborted = False
+        
         try:
             for chunk in stream:
                 content = chunk.get("message", {}).get("content", "")
                 if content:
                     response_accumulated += content
+                
                 if content.lstrip().startswith("<think>"):
                     inside_think = True
                     think_buffer = content
                     continue
+                
                 if inside_think:
                     think_buffer += content
                     if "</think>" in content:
@@ -754,6 +841,7 @@ def chat():
                                 break
                         think_buffer = ""
                     continue
+                
                 try:
                     yield f"data: {json.dumps({'content': content})}\n\n"
                 except GeneratorExit:
@@ -767,11 +855,12 @@ def chat():
             print("DEBUG: Exception in stream generator:", e)
         finally:
             if response_accumulated:
-                print("DEBUG: Saving partial response for story:", story_name)
+                print("DEBUG: Saving response for story:", story_name)
                 assistant_msg = {"role": "assistant", "content": response_accumulated}
                 conversations[story_name].append(assistant_msg)
                 llm_conversations[story_name].append(assistant_msg)
                 
+
                 story_creation_table.update(
                     {
                         "conversation_history": conversations[story_name],
@@ -779,14 +868,6 @@ def chat():
                     },
                     StoryQuery.name == story_name
                 )
-                
-                def background_tasks():
-                    updated_conv = summarize_and_save(story_name)
-                    llm_conversations[story_name] = updated_conv
-                    print("DEBUG: LLM Conversation after summarization:")
-                    print(json.dumps(llm_conversations[story_name], indent=2))
-                
-                threading.Thread(target=background_tasks).start()
                 
             print("DEBUG: Stream complete for story:", story_name)
 
