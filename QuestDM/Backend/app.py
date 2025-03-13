@@ -3,7 +3,7 @@ from flask_cors import CORS
 import ollama
 import re
 import json
-
+import traceback
 from tinydb import TinyDB, Query
 from difflib import SequenceMatcher
 import time 
@@ -171,20 +171,7 @@ def merge_characters(existing_chars, new_chars):
     return merged_characters
 
 def process_summary_json(summary_text):
-    """
-    Process and extract structured data from LLM-generated summary text using
-    a cascading approach with multiple parsing methods.
-    
-    Args:
-        summary_text (str): The raw summary text from the LLM.
-        
-    Returns:
-        dict: A dictionary with 'summary' and 'character_creation' keys.
-    """
-    import json
-    import re
-    import time
-    import traceback
+ 
     
     print("\n" + "="*50)
     print("DEBUG: Starting JSON parsing process")
@@ -193,7 +180,7 @@ def process_summary_json(summary_text):
     print("="*50 + "\n")
 
     default_result = {
-        "summary": "",
+        "summary": "Summarization failed, this doesn't happen very often, you are on your own LLM. Continue the story naturally using the limited context you have. When dealing with characters whose background you're uncertain about, use dialogue to reconstruct history - have characters say things like 'Remember what we've been through together?' or 'After all that happened in the forest, I still can't believe we made it out.' This will encourage the player to mention past events in their response, helping you rebuild the narrative context. NPCs can also ask questions like 'How did you solve that problem with the dragon again?' to prompt the player to recount important story elements while maintaining the illusion of continuity.",
         "character_creation": {}
     }
     
@@ -220,45 +207,31 @@ def process_summary_json(summary_text):
             print(f"DEBUG: Cleaned text preview: {result[:100]}...")
         
         return result
-    
-  
-    start_time = time.time()
-    json_err = None
-    try:
-        print("\nDEBUG: ATTEMPTING METHOD 1 - Direct JSON parsing")
-        cleaned_text = clean_text(summary_text)
-        data = json.loads(cleaned_text)
-        
-        if "summary" in data and "character_creation" in data:
-            if isinstance(data["summary"], str) and isinstance(data["character_creation"], dict):
-                end_time = time.time()
-                print(f"DEBUG: Method 1 (direct parsing) SUCCEEDED in {end_time-start_time:.3f}s")
-                print(f"DEBUG: Found summary of length: {len(data['summary'])} chars")
-                print(f"DEBUG: Found {len(data['character_creation'])} characters")
-                print(f"DEBUG: Characters: {', '.join(list(data['character_creation'].keys()))}")
-                return data
-            else:
-                print("DEBUG: Invalid data structure - summary or character_creation has wrong type")
-        else:
-            print("DEBUG: Missing required fields in parsed JSON")
-    except json.JSONDecodeError as e:
-        json_err = e
-        print(f"DEBUG: Method 1 (direct parsing) failed with JSONDecodeError: {e}")
-        print(f"DEBUG: Error at position {e.pos}: '{cleaned_text[max(0, e.pos-20):min(len(cleaned_text), e.pos+20)]}'")
-    except Exception as e:
-        print(f"DEBUG: Method 1 (direct parsing) failed: {str(e)}")
-    end_time = time.time()
-    print(f"DEBUG: Method 1 failed in {end_time-start_time:.3f}s")
-    
 
-    start_time = time.time()
+ 
     try:
-        print("\nDEBUG: ATTEMPTING METHOD 2 - Ask LLM to fix malformed JSON")
+        print("\nDEBUG: ATTEMPTING METHOD 1 - Ask LLM to fix malformed JSON")
+        start_time = time.time()
         import ollama
         
-
-        error_details = ""
-        if json_err is not None:
+    
+        cleaned_text = clean_text(summary_text)
+        
+      
+        try:
+            data = json.loads(cleaned_text)
+            if "summary" in data and "character_creation" in data:
+                if isinstance(data["summary"], str) and isinstance(data["character_creation"], dict):
+                    print(f"DEBUG: JSON is already valid, no repair needed")
+                    print(f"DEBUG: Found summary of length: {len(data['summary'])} chars")
+                    print(f"DEBUG: Found {len(data['character_creation'])} characters")
+                    if data['character_creation']:
+                        print(f"DEBUG: Characters: {', '.join(list(data['character_creation'].keys()))}")
+                    end_time = time.time()
+                    print(f"DEBUG: Direct parsing succeeded in {end_time-start_time:.3f}s")
+                    return data
+        except json.JSONDecodeError as json_err:
+            print(f"DEBUG: JSON is invalid, attempting repair. Error: {json_err}")
             error_position = json_err.pos
             error_msg = str(json_err)
             surrounding_text = cleaned_text[max(0, error_position-30):min(len(cleaned_text), error_position+30)]
@@ -270,183 +243,140 @@ def process_summary_json(summary_text):
                 f"- The ^ indicates approximately where the error occurred: "
                 f"{surrounding_text[:min(30, error_position)]}^{surrounding_text[min(30, error_position):]}\n\n"
             )
-            print(f"DEBUG: Including JSON error details in prompt: {error_msg}")
-        
+        except Exception as e:
+            print(f"DEBUG: Error during direct parsing: {str(e)}")
+            error_details = f"Error during parsing: {str(e)}\n\n"
 
-        fix_prompt = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a JSON repair specialist. You will be given a malformed JSON string. "
-                    "Your task is to fix this JSON and return ONLY the fixed, valid JSON with no explanation or commentary. "
-                    "The output must be properly formatted JSON that can be parsed by Python's json.loads() function. "
-                    "The JSON should contain:\n"
-                    "1. A 'summary' field (string)\n"
-                    "2. A 'character_creation' field (object) with character data\n\n"
-                    "Here is the expected JSON structure:\n"
-                    "{\n"
-                    '  "summary": "A detailed summary of the story progression.",\n'
-                    '  "character_creation": {\n'
-                    '    "CharacterName": {\n'
-                    '      "name": "CharacterName",\n'
-                    '      "race": "Race (if known, or \\"Unknown\\" if not)",\n'
-                    '      "class": "Class (if known, or \\"Unknown\\" if not)",\n'
-                    '      "backstory": "Character backstory based on available information",\n'
-                    '      "status": "Current physical/mental state and location"\n'
-                    "    },\n"
-                    '    "AnotherCharacter": {\n'
-                    '      "name": "AnotherCharacter",\n'
-                    '      "race": "Race",\n'
-                    '      "class": "Class",\n'
-                    '      "backstory": "Backstory",\n'
-                    '      "status": "Status"\n'
-                    "    }\n"
-                    "  }\n"
-                    "}\n\n"
-                    "Common issues to look for and fix:\n"
-                    "- Unquoted property names\n"
-                    "- Single quotes instead of double quotes\n"
-                    "- Trailing commas\n"
-                    "- Missing commas between properties\n"
-                    "- Unclosed brackets/braces\n"
-                    "- Unescaped quotes in strings\n"
-                    "- Missing quotes around property values\n"
-                    "- The 'summary' field MUST be a single string with proper escaping for quotes (\\\")\n"
-                    "- Character names as keys MUST EXACTLY MATCH the corresponding 'name' field values\n"
-                    "- All strings MUST be properly quoted with double quotes and escaped where needed\n"
-                )
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Fix this malformed JSON:\n\n{summary_text}\n\n"
-                    f"{error_details}"
-                    "Remember to return ONLY the fixed JSON with no explanations or extra text. "
-                    "Ensure the output is valid JSON that can be parsed with json.loads(). "
-                    "Make sure all property names and string values use double quotes."
-                )
-            }
-        ]
-        
-    
-        print("DEBUG: Sending JSON repair request to model")
-        response = ollama.chat(
-            model=current_model,
-            messages=fix_prompt,
-            stream=False,
-            options={"num_ctx": current_context_size}
-        )
-        
-        if hasattr(response, "message"):
-            fixed_json_text = response.message.content
-        elif isinstance(response, dict):
-            fixed_json_text = response.get("message", {}).get("content", "")
-        else:
-            fixed_json_text = ""
-        
-        print(f"DEBUG: Received fixed JSON of length: {len(fixed_json_text)} chars")
-        print(f"DEBUG: Fixed JSON preview: {fixed_json_text[:100]}...")
-        
 
-        cleaned_fixed_json = clean_text(fixed_json_text)
-        data = json.loads(cleaned_fixed_json)
-        
-        if "summary" in data and "character_creation" in data:
-            if isinstance(data["summary"], str) and isinstance(data["character_creation"], dict):
-                end_time = time.time()
-                print(f"DEBUG: Method 2 (LLM fix) SUCCEEDED in {end_time-start_time:.3f}s")
-                print(f"DEBUG: Found summary of length: {len(data['summary'])} chars")
-                print(f"DEBUG: Found {len(data['character_creation'])} characters")
-                print(f"DEBUG: Characters: {', '.join(list(data['character_creation'].keys()))}")
-                return data
-            else:
-                print("DEBUG: Invalid data structure from LLM fix")
-        else:
-            print("DEBUG: Missing required fields in LLM-fixed JSON")
-    except json.JSONDecodeError as json_err:
-        print(f"DEBUG: Method 2 (LLM fix) failed with JSONDecodeError: {json_err}")
-        if 'cleaned_fixed_json' in locals():
-            print(f"DEBUG: Error at position {json_err.pos}: '{cleaned_fixed_json[max(0, json_err.pos-20):min(len(cleaned_fixed_json), json_err.pos+20)]}'")
-    except Exception as e:
-        print(f"DEBUG: Method 2 (LLM fix) failed: {str(e)}")
-    end_time = time.time()
-    print(f"DEBUG: Method 2 failed in {end_time-start_time:.3f}s")
-    
-
-    start_time = time.time()
-    try:
-        print("\nDEBUG: ATTEMPTING METHOD 3 - JSON fixes")
-        cleaned_text = clean_text(summary_text)
-        original_text = cleaned_text
-        fixes_applied = []
-        
-        fixed_text = re.sub(r'([{,])\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*:', r'\1"\2":', cleaned_text)
-        if fixed_text != cleaned_text:
-            fixes_applied.append("Quoted unquoted keys")
-            cleaned_text = fixed_text
-        
-        fixed_text = re.sub(r"'([^']*)'", r'"\1"', cleaned_text)
-        if fixed_text != cleaned_text:
-            fixes_applied.append("Converted single quotes to double quotes")
-            cleaned_text = fixed_text
-        
-        fixed_text = re.sub(r',\s*([}\]])', r'\1', cleaned_text)
-        if fixed_text != cleaned_text:
-            fixes_applied.append("Removed trailing commas")
-            cleaned_text = fixed_text
-        
-        fixed_text = re.sub(r'}\s*{', r'},{', cleaned_text)
-        if fixed_text != cleaned_text:
-            fixes_applied.append("Added missing commas")
-            cleaned_text = fixed_text
-        
-
-        fixed_text = cleaned_text.replace('\\n', ' ').replace('\\r', ' ').replace('\\t', ' ')
-        if fixed_text != cleaned_text:
-            fixes_applied.append("Removed escape sequences")
-            cleaned_text = fixed_text
+        global current_model
+        global current_context_size
         
   
-        quote_count = cleaned_text.count('"')
-        if quote_count % 2 != 0:
-            print("DEBUG: Odd number of quotes detected, attempting to fix")
-  
-            if not cleaned_text.endswith('"'):
-                cleaned_text = cleaned_text + '"'
-                fixes_applied.append("Added missing closing quote")
+        max_attempts = 3
+        attempt = 0
+        last_error = None
         
-        if fixes_applied:
-            print(f"DEBUG: Applied fixes: {', '.join(fixes_applied)}")
-            if original_text != cleaned_text:
-                print(f"DEBUG: Original: {original_text[:50]}...")
-                print(f"DEBUG: Fixed: {cleaned_text[:50]}...")
+        while attempt < max_attempts:
+            attempt += 1
+            try:
+                print(f"DEBUG: LLM repair attempt {attempt}/{max_attempts}")
+                
+                fix_prompt = [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a JSON repair specialist. You will be given a malformed JSON string. "
+                            "Your task is to fix this JSON and return ONLY the fixed, valid JSON with no explanation or commentary. "
+                            "The output must be properly formatted JSON that can be parsed by Python's json.loads() function. "
+                            "The JSON should contain:\n"
+                            "1. A 'summary' field (string)\n"
+                            "2. A 'character_creation' field (object) with character data\n\n"
+                            "Here is the expected JSON structure:\n"
+                            "{\n"
+                            '  "summary": "A detailed summary of the story progression.",\n'
+                            '  "character_creation": {\n'
+                            '    "CharacterName": {\n'
+                            '      "name": "CharacterName",\n'
+                            '      "race": "Race (if known, or \\"Unknown\\" if not)",\n'
+                            '      "class": "Class (if known, or \\"Unknown\\" if not)",\n'
+                            '      "backstory": "Character backstory based on available information",\n'
+                            '      "status": "Current physical/mental state and location"\n'
+                            "    },\n"
+                            '    "AnotherCharacter": {\n'
+                            '      "name": "AnotherCharacter",\n'
+                            '      "race": "Race",\n'
+                            '      "class": "Class",\n'
+                            '      "backstory": "Backstory",\n'
+                            '      "status": "Status"\n'
+                            "    }\n"
+                            "  }\n"
+                            "}\n\n"
+                            "Common issues to look for and fix:\n"
+                            "- Unquoted property names\n"
+                            "- Single quotes instead of double quotes\n"
+                            "- Trailing commas\n"
+                            "- Missing commas between properties\n"
+                            "- Unclosed brackets/braces\n"
+                            "- Unescaped quotes in strings\n"
+                            "- Missing quotes around property values\n"
+                            "- The 'summary' field MUST be a single string with proper escaping for quotes (\\\")\n"
+                            "- Character names as keys MUST EXACTLY MATCH the corresponding 'name' field values\n"
+                            "- All strings MUST be properly quoted with double quotes and escaped where needed\n"
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Fix this malformed JSON:\n\n{summary_text}\n\n"
+                            f"{error_details if 'error_details' in locals() else ''}"
+                            f"This is attempt {attempt} out of {max_attempts}. "
+                            "Remember to return ONLY the fixed JSON with no explanations or extra text. "
+                            "Ensure the output is valid JSON that can be parsed with json.loads(). "
+                            "Make sure all property names and string values use double quotes."
+                        )
+                    }
+                ]
+                
+       
+                if attempt > 1 and last_error:
+                    fix_prompt[1]["content"] += f"\n\nPrevious attempt failed with error: {last_error}"
+                
+                print(f"DEBUG: Sending JSON repair request to model (attempt {attempt})")
+                response = ollama.chat(
+                    model=current_model,
+                    messages=fix_prompt,
+                    stream=False,
+                    options={"num_ctx": current_context_size}
+                )
+                
+                if hasattr(response, "message"):
+                    fixed_json_text = response.message.content
+                elif isinstance(response, dict):
+                    fixed_json_text = response.get("message", {}).get("content", "")
+                else:
+                    fixed_json_text = ""
+                
+                print(f"DEBUG: Received fixed JSON of length: {len(fixed_json_text)} chars")
+                print(f"DEBUG: Fixed JSON preview: {fixed_json_text[:100]}...")
+                
+                cleaned_fixed_json = clean_text(fixed_json_text)
+                data = json.loads(cleaned_fixed_json)
+                
+                if "summary" in data and "character_creation" in data:
+                    if isinstance(data["summary"], str) and isinstance(data["character_creation"], dict):
+                        end_time = time.time()
+                        print(f"DEBUG: Method 1 (LLM fix) SUCCEEDED on attempt {attempt} in {end_time-start_time:.3f}s")
+                        print(f"DEBUG: Found summary of length: {len(data['summary'])} chars")
+                        print(f"DEBUG: Found {len(data['character_creation'])} characters")
+                        if data['character_creation']:
+                            print(f"DEBUG: Characters: {', '.join(list(data['character_creation'].keys()))}")
+                        return data
+                    else:
+                        raise ValueError("Invalid data structure from LLM fix (wrong types)")
+                else:
+                    raise ValueError("Missing required fields in LLM-fixed JSON")
+                    
+            except json.JSONDecodeError as json_err:
+                print(f"DEBUG: Attempt {attempt} - JSON decode error: {json_err}")
+                last_error = f"JSON decode error: {json_err}"
+                if attempt == max_attempts:
+                    print(f"DEBUG: All {max_attempts} LLM repair attempts failed with JSON decode errors")
+            except Exception as e:
+                print(f"DEBUG: Attempt {attempt} - Error: {str(e)}")
+                last_error = str(e)
+                if attempt == max_attempts:
+                    print(f"DEBUG: All {max_attempts} LLM repair attempts failed")
         
-        data = json.loads(cleaned_text)
+        print(f"DEBUG: Method 1 (LLM fix) exhausted all {max_attempts} attempts")
         
-        if "summary" in data and "character_creation" in data:
-            if isinstance(data["summary"], str) and isinstance(data["character_creation"], dict):
-                end_time = time.time()
-                print(f"DEBUG: Method 3 (JSON fixes) SUCCEEDED in {end_time-start_time:.3f}s")
-                print(f"DEBUG: Found summary of length: {len(data['summary'])} chars")
-                print(f"DEBUG: Found {len(data['character_creation'])} characters")
-                print(f"DEBUG: Characters: {', '.join(list(data['character_creation'].keys()))}")
-                return data
-            else:
-                print("DEBUG: Invalid data structure after fixes")
-        else:
-            print("DEBUG: Missing required fields after fixes")
-    except json.JSONDecodeError as json_err:
-        print(f"DEBUG: Method 3 (JSON fixes) failed with JSONDecodeError: {json_err}")
-        print(f"DEBUG: Error at position {json_err.pos}: '{cleaned_text[max(0, json_err.pos-20):min(len(cleaned_text), json_err.pos+20)]}'")
     except Exception as e:
-        print(f"DEBUG: Method 3 (JSON fixes) failed: {str(e)}")
-    end_time = time.time()
-    print(f"DEBUG: Method 3 failed in {end_time-start_time:.3f}s")
+        print(f"DEBUG: Method 1 (LLM fix) overall process failed: {str(e)}")
+        print(f"DEBUG: Traceback: {traceback.format_exc()}")
     
 
-    start_time = time.time()
     try:
-        print("\nDEBUG: ATTEMPTING METHOD 4 - Advanced regex extraction")
+        print("\nDEBUG: ATTEMPTING METHOD 2 - Regex extraction fallback")
+        start_time = time.time()
         result = default_result.copy()
         cleaned_text = clean_text(summary_text)
         
@@ -460,7 +390,19 @@ def process_summary_json(summary_text):
             result["summary"] = summary
             print(f"DEBUG: Successfully extracted summary ({len(summary)} chars)")
         else:
-            print("DEBUG: Could not find summary field with regex")
+
+            print("DEBUG: Looking for any summary-like content...")
+            summary_lines = re.findall(r'summary.*?["\']([^"\']+)["\']', summary_text, re.IGNORECASE | re.DOTALL)
+            if summary_lines:
+                result["summary"] = summary_lines[0]
+                print(f"DEBUG: Found possible summary: {summary_lines[0][:50]}...")
+            else:
+ 
+                fallback_summary = summary_text[:min(200, len(summary_text))]
+                if len(summary_text) > 200:
+                    fallback_summary += "..."
+                result["summary"] = fallback_summary
+                print(f"DEBUG: Using fallback summary: {fallback_summary[:50]}...")
         
         print("DEBUG: Extracting character_creation section...")
         char_section_pattern = r'"character_creation"\s*:\s*{([\s\S]*?)}'
@@ -501,79 +443,51 @@ def process_summary_json(summary_text):
             print(f"DEBUG: Successfully extracted {len(result['character_creation'])} characters")
         else:
             print("DEBUG: Could not find character_creation section with regex")
-        
-        if result["summary"] or result["character_creation"]:
-            end_time = time.time()
-            print(f"DEBUG: Method 4 (regex extraction) SUCCEEDED in {end_time-start_time:.3f}s")
-            return result
-        else:
-            print("DEBUG: No useful data extracted with regex method")
-    except Exception as e:
-        print(f"DEBUG: Method 4 (regex extraction) failed: {str(e)}")
-        print(f"DEBUG: Traceback: {traceback.format_exc()}")
-    end_time = time.time()
-    print(f"DEBUG: Method 4 failed in {end_time-start_time:.3f}s")
-    
+            
 
-    start_time = time.time()
-    try:
-        print("\nDEBUG: ATTEMPTING METHOD 5 - Manual text parsing (last resort)")
-        result = default_result.copy()
-        
-        print("DEBUG: Looking for any summary-like content...")
-        summary_lines = re.findall(r'summary.*?["\']([^"\']+)["\']', summary_text, re.IGNORECASE | re.DOTALL)
-        if summary_lines:
-            result["summary"] = summary_lines[0]
-            print(f"DEBUG: Found possible summary: {summary_lines[0][:50]}...")
-        else:
-            fallback_summary = summary_text[:min(100, len(summary_text))]
-            if len(summary_text) > 100:
-                fallback_summary += "..."
-            result["summary"] = fallback_summary
-            print(f"DEBUG: Using fallback summary: {fallback_summary}")
-        
-        print("DEBUG: Looking for character names in text...")
-        char_matches = re.findall(r'(?:name|character)["\'\s:]+([A-Z][a-zA-Z\s]+)', summary_text)
-        print(f"DEBUG: Found {len(char_matches)} potential character names")
-        
-        for char_name in char_matches:
-            char_name = char_name.strip()
-            if not char_name:
-                continue
+            print("DEBUG: Looking for character names in text...")
+            char_matches = re.findall(r'(?:name|character)["\'\s:]+([A-Z][a-zA-Z\s]+)', summary_text)
+            print(f"DEBUG: Found {len(char_matches)} potential character names")
             
-            print(f"DEBUG: Processing potential character: {char_name}")    
-            char_data = {
-                "name": char_name,
-                "race": "Unknown",
-                "class": "Unknown",
-                "backstory": "",
-                "status": ""
-            }
-            
-            char_vicinity = summary_text[max(0, summary_text.find(char_name)-100):
-                                        min(len(summary_text), summary_text.find(char_name)+200)]
-            
-            for field in ["race", "class"]:
-                field_match = re.search(fr'{field}["\'\s:]+([A-Za-z]+)', char_vicinity, re.IGNORECASE)
-                if field_match:
-                    char_data[field] = field_match.group(1)
-                    print(f"DEBUG:   - Found {field}: {field_match.group(1)}")
-            
-            result["character_creation"][char_name] = char_data
+            for char_name in char_matches:
+                char_name = char_name.strip()
+                if not char_name:
+                    continue
+                
+                print(f"DEBUG: Processing potential character: {char_name}")    
+                char_data = {
+                    "name": char_name,
+                    "race": "Unknown",
+                    "class": "Unknown",
+                    "backstory": "",
+                    "status": ""
+                }
+                
+                char_vicinity = summary_text[max(0, summary_text.find(char_name)-100):
+                                          min(len(summary_text), summary_text.find(char_name)+200)]
+                
+                for field in ["race", "class"]:
+                    field_match = re.search(fr'{field}["\'\s:]+([A-Za-z]+)', char_vicinity, re.IGNORECASE)
+                    if field_match:
+                        char_data[field] = field_match.group(1)
+                        print(f"DEBUG:   - Found {field}: {field_match.group(1)}")
+                
+                result["character_creation"][char_name] = char_data
         
         end_time = time.time()
-        print(f"DEBUG: Method 5 (manual text parsing) used as FALLBACK in {end_time-start_time:.3f}s")
+        print(f"DEBUG: Method 2 (regex extraction) completed in {end_time-start_time:.3f}s")
         print(f"DEBUG: Created summary of length: {len(result['summary'])} chars")
         print(f"DEBUG: Extracted {len(result['character_creation'])} characters")
         if result['character_creation']:
             print(f"DEBUG: Characters: {', '.join(list(result['character_creation'].keys()))}")
+        
+
         return result
     except Exception as e:
-        print(f"DEBUG: Method 5 (manual text parsing) failed: {str(e)}")
+        print(f"DEBUG: Method 2 (regex extraction) failed: {str(e)}")
         print(f"DEBUG: Traceback: {traceback.format_exc()}")
-    end_time = time.time()
-    print(f"DEBUG: Method 5 failed in {end_time-start_time:.3f}s")
     
+ 
     print("\nDEBUG: ALL PARSING METHODS FAILED, using raw text fallback")
     default_result["summary"] = summary_text[:min(200, len(summary_text))]
     if len(summary_text) > 200:
