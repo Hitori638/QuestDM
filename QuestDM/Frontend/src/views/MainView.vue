@@ -591,7 +591,15 @@ export default {
       }
     },
     openEditStoryModal(story) {
-      api.post('/load_story', { name: story.name })
+  
+      this.selectedStory = story;
+
+
+      this.loadStory()
+        .then(() => {
+
+          return api.post('/load_story', { name: story.name });
+        })
         .then((data) => {
           const updatedStory = data.story;
           let charactersArray = [];
