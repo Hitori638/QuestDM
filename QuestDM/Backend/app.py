@@ -5,7 +5,6 @@ import re
 import json
 import traceback
 from tinydb import TinyDB, Query
-from difflib import SequenceMatcher
 import time 
 
 
@@ -29,8 +28,46 @@ StoryQuery = Query()
 
 last_story_summary = ""
 
-def construct_summary_prompt(conversation_text):
+def construct_summary_prompt(conversation_text, current_story=None):
+    """
+    Constructs a prompt for the LLM to summarize the story and update characters.
+    
+    Args:
+        conversation_text (str): The conversation history to summarize
+        current_story (dict, optional): The current story object with existing characters
+        
+    Returns:
+        list: List of prompt messages for the LLM
+    """
     print("DEBUG: Constructing summary prompt with conversation of length:", len(conversation_text))
+    
+
+    existing_characters = {}
+    if current_story and 'characters' in current_story:
+        existing_characters = current_story['characters']
+        if not isinstance(existing_characters, dict):
+            if isinstance(existing_characters, list):
+                char_dict = {}
+                for char in existing_characters:
+                    if isinstance(char, dict) and 'name' in char:
+                        char_dict[char['name']] = char
+                existing_characters = char_dict
+            else:
+                existing_characters = {}
+    
+
+    character_context = "CURRENT CHARACTERS:\n"
+    if existing_characters:
+        for char_name, char_info in existing_characters.items():
+            if isinstance(char_info, dict):
+                char_context = f"- {char_name}:\n"
+                for key, value in char_info.items():
+                    if key != 'template_origin' and value:  
+                        char_context += f"  {key}: {value}\n"
+                character_context += char_context
+    else:
+        character_context += "No existing characters tracked.\n"
+    
     return [
         {
             "role": "system",
@@ -39,6 +76,14 @@ def construct_summary_prompt(conversation_text):
                 "Your job is to generate:\n\n"
                 "1. A comprehensive **summary** of the story so far as a simple string\n"
                 "2. An **updated character_creation dictionary** containing ANY AND ALL characters\n\n"
+                f"{character_context}\n\n"
+                "CHARACTER TRACKING INSTRUCTIONS:\n"
+                "- Maintain all existing characters in your response\n"
+                "- Update character information based on new details in the conversation\n"
+                "- If a character was previously unnamed (e.g., 'mysterious stranger') but now has a name, "
+                "create a new entry with the proper name and include their prior details\n"
+                "- Track all characters mentioned in the story, even minor NPCs\n"
+                "- For each character, include name, race, class, backstory, and current status\n\n"
                 "CRITICAL INSTRUCTIONS FOR JSON OUTPUT:\n"
                 "- Output ONLY valid, parseable JSON with NO explanations before or after\n"
                 "- Do NOT prefix your response with ```json or any other markdown\n"
@@ -128,50 +173,10 @@ def merge_conversation(existing_conversation, new_conversation):
             existing_conversation.append(msg)
     return existing_conversation
 
-def merge_characters(existing_chars, new_chars):
-    """
-    Merge character dictionaries with fuzzy name matching.
-    
-    Args:
-        existing_chars (dict): Existing characters dictionary
-        new_chars (dict): New characters dictionary to merge
-    
-    Returns:
-        dict: Merged characters dictionary
-    """
-    if not isinstance(existing_chars, dict):
-        existing_chars = {}
-    if not isinstance(new_chars, dict):
-        new_chars = {}
-   
-    merged_characters = existing_chars.copy()
-   
-    for new_char_id, new_char in new_chars.items():
-   
-        matched = False
-        for existing_char_id, existing_char in merged_characters.items():
-            if fuzzy_match_name(new_char_id, existing_char_id):
-        
-                for key, val in new_char.items():
-                    if key == 'backstory' and existing_char.get('backstory'):
-                        original_backstory = existing_char['backstory']
-                        if val != original_backstory and val:
-                            merged_characters[existing_char_id]['backstory'] = val
-                    elif key == 'status' and val:
-                        merged_characters[existing_char_id][key] = val
-                    else:
-                        merged_characters[existing_char_id][key] = val
-                matched = True
-                break
-        
-  
-        if not matched:
-            merged_characters[new_char_id] = new_char
-   
-    return merged_characters
+
 
 def process_summary_json(summary_text):
- 
+   
     
     print("\n" + "="*50)
     print("DEBUG: Starting JSON parsing process")
@@ -208,16 +213,16 @@ def process_summary_json(summary_text):
         
         return result
 
- 
+
     try:
         print("\nDEBUG: ATTEMPTING METHOD 1 - Ask LLM to fix malformed JSON")
         start_time = time.time()
         import ollama
         
-    
+
         cleaned_text = clean_text(summary_text)
         
-      
+
         try:
             data = json.loads(cleaned_text)
             if "summary" in data and "character_creation" in data:
@@ -251,7 +256,7 @@ def process_summary_json(summary_text):
         global current_model
         global current_context_size
         
-  
+
         max_attempts = 3
         attempt = 0
         last_error = None
@@ -390,14 +395,14 @@ def process_summary_json(summary_text):
             result["summary"] = summary
             print(f"DEBUG: Successfully extracted summary ({len(summary)} chars)")
         else:
-
+     
             print("DEBUG: Looking for any summary-like content...")
             summary_lines = re.findall(r'summary.*?["\']([^"\']+)["\']', summary_text, re.IGNORECASE | re.DOTALL)
             if summary_lines:
                 result["summary"] = summary_lines[0]
                 print(f"DEBUG: Found possible summary: {summary_lines[0][:50]}...")
             else:
- 
+      
                 fallback_summary = summary_text[:min(200, len(summary_text))]
                 if len(summary_text) > 200:
                     fallback_summary += "..."
@@ -444,7 +449,7 @@ def process_summary_json(summary_text):
         else:
             print("DEBUG: Could not find character_creation section with regex")
             
-
+  
             print("DEBUG: Looking for character names in text...")
             char_matches = re.findall(r'(?:name|character)["\'\s:]+([A-Z][a-zA-Z\s]+)', summary_text)
             print(f"DEBUG: Found {len(char_matches)} potential character names")
@@ -481,13 +486,13 @@ def process_summary_json(summary_text):
         if result['character_creation']:
             print(f"DEBUG: Characters: {', '.join(list(result['character_creation'].keys()))}")
         
-
+     
         return result
     except Exception as e:
         print(f"DEBUG: Method 2 (regex extraction) failed: {str(e)}")
         print(f"DEBUG: Traceback: {traceback.format_exc()}")
     
- 
+
     print("\nDEBUG: ALL PARSING METHODS FAILED, using raw text fallback")
     default_result["summary"] = summary_text[:min(200, len(summary_text))]
     if len(summary_text) > 200:
@@ -507,6 +512,11 @@ def summarize_and_save(story_name, threshold=None):
     print(f"DEBUG: Starting summarization check for story '{story_name}'")
     llm_conv = llm_conversations.get(story_name, [])
     
+
+    story = story_creation_table.get(StoryQuery.name == story_name)
+    if not story:
+        print(f"DEBUG: Story '{story_name}' not found in database")
+        return llm_conv
 
     if len(llm_conv) < 3:
         print("DEBUG: Not enough messages for summarization (< 3)")
@@ -545,7 +555,7 @@ def summarize_and_save(story_name, threshold=None):
 
         conversation_text = f"PREVIOUS SUMMARY: {existing_summary}\n\n{new_content}"
     else:
-   
+
         messages_to_summarize = llm_conv[3:]
         user_messages_to_summarize = [msg for msg in messages_to_summarize if msg["role"] == "user"]
         
@@ -557,17 +567,17 @@ def summarize_and_save(story_name, threshold=None):
             print(f"DEBUG: Not enough messages for first summarization ({len(user_messages_to_summarize)} < {threshold})")
             return llm_conv
             
-  
+ 
         print(f"DEBUG: Threshold reached, creating first summary for {len(user_messages_to_summarize)} user messages")
         
-   
+
         conversation_text = "\n\n".join(
             f"{msg['role'].upper()}: {msg['content']}" for msg in messages_to_summarize
         )
     
 
     print(f"DEBUG: Constructing summary prompt with conversation text of length: {len(conversation_text)}")
-    summarization_prompt = construct_summary_prompt(conversation_text)
+    summarization_prompt = construct_summary_prompt(conversation_text, story)
     
     print(f"DEBUG: Sending summarization request to model: {current_model}")
     response = ollama.chat(
@@ -592,7 +602,6 @@ def summarize_and_save(story_name, threshold=None):
     summary_text = processed_summary.get("summary", "")
     
     print(f"DEBUG: Extracted summary text of length: {len(summary_text)}")
-    
 
     summary_message = {"role": "assistant", "content": f"SUMMARY: {summary_text}"}
     
@@ -604,7 +613,7 @@ def summarize_and_save(story_name, threshold=None):
     
 
     if has_summary:
-   
+
         if len(llm_conv) > 4 + recent_messages_to_keep:
 
             new_llm_conv += llm_conv[-(recent_messages_to_keep):]
@@ -616,7 +625,7 @@ def summarize_and_save(story_name, threshold=None):
     else:
 
         if len(llm_conv) > 3 + recent_messages_to_keep:
-   
+
             new_llm_conv += llm_conv[-(recent_messages_to_keep):]
             print(f"DEBUG: Keeping {recent_messages_to_keep} most recent messages for first summary")
         else:
@@ -630,39 +639,24 @@ def summarize_and_save(story_name, threshold=None):
     print(f"DEBUG: - Recent messages: {len(new_llm_conv) - 4} messages")
     
 
-    story = story_creation_table.get(StoryQuery.name == story_name)
-    if story:
-        if 'character_creation' in processed_summary and processed_summary['character_creation']:
-            existing_characters = story.get('characters', {})
-            if not isinstance(existing_characters, dict):
-                existing_characters = {}
-            
-  
-            if isinstance(existing_characters, list):
-                char_dict = {}
-                for char in existing_characters:
-                    if isinstance(char, dict) and 'name' in char:
-                        char_dict[char['name']] = char
-                existing_characters = char_dict
-            
-  
-            merged_characters = merge_characters(existing_characters, processed_summary['character_creation'])
-            
-    
-            story_creation_table.update(
-                {'characters': merged_characters},
-                StoryQuery.name == story_name
-            )
+    if 'character_creation' in processed_summary and processed_summary['character_creation']:
+        print(f"DEBUG: Updating story with {len(processed_summary['character_creation'])} characters")
+        
 
-  
         story_creation_table.update(
-            {
-                "conversation_history": conversations.get(story_name, []),
-                "llm_memory": new_llm_conv,
-                "current_summary": json.dumps(processed_summary)  
-            },
+            {'characters': processed_summary['character_creation']},
             StoryQuery.name == story_name
         )
+    
+
+    story_creation_table.update(
+        {
+            "conversation_history": conversations.get(story_name, []),
+            "llm_memory": new_llm_conv,
+            "current_summary": json.dumps(processed_summary)
+        },
+        StoryQuery.name == story_name
+    )
     
     return new_llm_conv
 
@@ -679,15 +673,7 @@ def transform_conversation_for_display(conversation):
             transformed.append(new_msg)
     return transformed
 
-def fuzzy_match_name(name1, name2, threshold=0.8):
 
-
-    normalized_name1 = name1.lower().replace(' ', '')
-    normalized_name2 = name2.lower().replace(' ', '')
-    
-    similarity = SequenceMatcher(None, normalized_name1, normalized_name2).ratio()
-    
-    return similarity >= threshold
 @app.route('/chat', methods=['POST'])
 def chat():
     data = request.get_json()
@@ -718,24 +704,33 @@ def chat():
         )
     }
     
-    characters = story.get("characters", [])
-    if isinstance(characters, dict):
-        characters = list(characters.values())
+
+    characters = story.get("characters", {})
+    if isinstance(characters, list):
+        char_dict = {}
+        for char in characters:
+            if isinstance(char, dict) and 'name' in char:
+                char_dict[char['name']] = char
+        characters = char_dict
     
     character_details = "Story Characters:\n"
-    for char in characters:
+    for char_name, char in characters.items():
         if isinstance(char, dict):
             details = f"{char.get('name', 'Unknown')} (Race: {char.get('race', 'Unknown')}, Class: {char.get('class', 'Unknown')})\n"
-            details += f"Backstory: {char.get('backstory', 'No backstory')}\n"
+            if char.get('backstory'):
+                details += f"Backstory: {char.get('backstory')}\n"
+            if char.get('status'):
+                details += f"Status: {char.get('status')}\n"
+            
+
             advanced_info = []
-            for key in char:
-                if key not in ['name', 'race', 'class', 'backstory']:
-                    advanced_info.append(f"{key}: {char[key]}")
+            for key, value in char.items():
+                if key not in ['name', 'race', 'class', 'backstory', 'status', 'template_origin'] and value:
+                    advanced_info.append(f"{key}: {value}")
             if advanced_info:
                 details += "Advanced: " + ", ".join(advanced_info) + "\n"
-            character_details += details
-        else:
-            character_details += f"{char}\n"
+            
+            character_details += details + "\n"
     
     character_prompt = {
         "role": "system",
