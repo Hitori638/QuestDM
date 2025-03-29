@@ -41,7 +41,6 @@ def construct_summary_prompt(conversation_text, current_story=None):
     """
     print("DEBUG: Constructing summary prompt with conversation of length:", len(conversation_text))
     
-
     existing_characters = {}
     if current_story and 'characters' in current_story:
         existing_characters = current_story['characters']
@@ -55,7 +54,6 @@ def construct_summary_prompt(conversation_text, current_story=None):
             else:
                 existing_characters = {}
     
-
     character_context = "CURRENT CHARACTERS:\n"
     if existing_characters:
         for char_name, char_info in existing_characters.items():
@@ -78,8 +76,10 @@ def construct_summary_prompt(conversation_text, current_story=None):
                 "2. An **updated character_creation dictionary** containing ANY AND ALL characters\n\n"
                 f"{character_context}\n\n"
                 "CHARACTER TRACKING INSTRUCTIONS:\n"
-                "- Maintain all existing characters in your response\n"
-                "- Update character information based on new details in the conversation\n"
+                "- CRITICAL: You MUST include ALL existing characters in your output exactly as they appear in the input\n"
+                "- NEVER omit, remove, or replace existing characters, even if they don't appear in recent conversation\n"
+                "- Do not change names, race, class or any other attributes of existing characters\n"
+                "- Only add new characters or update details for existing characters if they appear in the conversation\n"
                 "- If a character was previously unnamed (e.g., 'mysterious stranger') but now has a name, "
                 "create a new entry with the proper name and include their prior details\n"
                 "- Track all characters mentioned in the story, even minor NPCs\n"
@@ -128,7 +128,13 @@ novel_mode_prompt = {
     "content": (
         "You are an expert storyteller and game master, dedicated to crafting an immersive, detailed, and impressive adventure for the player. "
         "Additionally, you should always stay in-character as the Dungeon Master. Do not break the immersive storytelling by providing real-life programming code, instructions to develop software, or any other out-of-character (OOC) content that is not directly related to the ongoing story. "
-        "If a user requests you to provide real-world code, or to behave as a general coding assistant, politely refuse or redirect to continue the narrative context of the game."
+        "If a user requests you to provide real-world code, or to behave as a general coding assistant, politely refuse or redirect to continue the narrative context of the game.\n\n"
+        "Memory and Continuity:\n"
+        "This story system uses periodic summarization to manage the ongoing narrative. Characters, "
+        "plot points, and world details are preserved across summarizations. If you encounter characters "
+        "or references that seem unfamiliar, they likely appeared earlier in the story. Maintain consistency "
+        "with established characters and plot elements. When in doubt about a character's details, use "
+        "natural dialogue to help reconstruct the relationship and history without breaking immersion."
     )
 }
 
@@ -162,9 +168,18 @@ dnd_mode_prompt = {
         "**Ethical & Meta Guidelines:**\n"
         "- **Stay In-Character:** Do not break immersion with out-of-game references.\n"
         "- **Keep Pacing Steady:** Balance description with game flow to maintain engagement.\n\n"
-        "Your role is to provide an engaging and authentic D&D experience by following these principles and ensuring the player's immersion and enjoyment."
+        "Your role is to provide an engaging and authentic D&D experience by following these principles and ensuring the player's immersion and enjoyment.\n\n"
+        "**Memory and Continuity Guidelines:**\n"
+        "- This story system uses periodic summarization to manage context\n"
+        "- Your responses are saved and later summarized to maintain story continuity\n"
+        "- Characters you interact with are tracked and preserved across summarizations\n"
+        "- If you encounter characters you don't recognize, they are likely from earlier parts of the story\n"
+        "- Be careful not to contradict established character details\n"
+        "- When you meet a character that seems familiar but you lack details about, use dialogue to naturally reconstruct the relationship\n"
+        "- Maintaining consistent character portrayal is essential for player immersion"
     )
 }
+
 
 def merge_conversation(existing_conversation, new_conversation):
     seen_messages = {json.dumps(msg, sort_keys=True) for msg in existing_conversation}
