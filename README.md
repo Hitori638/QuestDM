@@ -1,34 +1,51 @@
 # QuestDM
+## Interactive Storytelling and Role-Playing Application with Local Language Models
 
-## Interactive Storytelling and Role-Playing Application
+QuestDM is a desktop application developed as part of my bachelor's thesis, serving as an academic exploration of interactive storytelling and role-playing using local language models. The application enables users to create and experience immersive narrative adventures with AI-powered storytelling in two distinct modes:
 
-This project is part of my bachelor's thesis and serves as an academic exploration of interactive storytelling and role-playing using AI models. The application enables users to engage in immersive narrative experiences in two modes:
-- **Novel Mode**: A rich, immersive storytelling mode for creative adventures.
-- **D&D Mode**: A structured role-playing experience based on Dungeons & Dragons mechanics.
+- **Novel Mode**: Rich, literary storytelling focused on narrative quality and style.
+- **D&D Mode**: Structured role-playing experience implementing Dungeons & Dragons 5th Edition rules and mechanics.
 
-## Purpose
+## Key Features
 
-The primary purpose of this application is academic. It demonstrates how advanced AI models can be integrated into narrative-driven applications for educational and personal exploration. This project is **not intended for commercial use**.
+- **Dynamic Story Generation**: AI-powered narrative creation that responds to user choices and actions.
+- **Character Management System**: Create, edit, and manage characters with D&D-style attributes and backstories.
+- **Virtual Dice Roller**: Integrated dice system for RPG mechanics with preset and custom dice configurations.
+- **Local LLM Integration**: Powered by local language models through Ollama, with no need for external API calls.
+- **Model Selection**: Freedom to choose from any compatible model installed via Ollama based on performance needs and available computing resources.
+- **Real-time Response Streaming**: See the AI's responses as they're generated for improved user experience.
+- **Story Summarization**: Automatic context compression for maintaining narrative consistency in long adventures.
 
-## Features
+## Technical Architecture
 
-- **Dynamic Conversation Modes**:
-  - **Novel Mode**: Crafting compelling, immersive adventures.
-  - **D&D Mode**: Following D&D 5th Edition rules for role-playing.
-- **Streaming Chat**: Real-time responses for a seamless user experience.
-- **Model Flexibility**: The application is designed to work with any AI model installed via [Ollama](https://ollama.ai). Users can switch between models based on their preferences.
-- **Interactive Design**: User choices dynamically influence story progression.
+QuestDM employs a multi-layered architecture:
 
-## Technical Details
+- **Frontend**: Vue.js application bundled with Electron for cross-platform desktop compatibility
+- **Backend**: Flask-based API server handling communication with language models
+- **Database**: TinyDB document-based storage for story and character persistence
+- **LLM Integration**: Ollama API for interfacing with local language models
+- **Packaging**: Electron for creating native desktop applications
 
-This application uses a **Flask backend** for handling API requests and a **Vue.js frontend** for the user interface. The backend leverages the [Ollama](https://ollama.ai) framework to interact with AI models. Although the project initially used the **Mistral Small** model, it is built to work with any model that a user installs via Ollama, and users can seamlessly switch between models as desired.
+## Requirements
 
-### Key Dependencies
+- **Ollama**: Required for running local language models
+- **Recommended Model**: llama3.2-vision:latest (optimized for this application)
+- **Hardware**: 16GB+ RAM recommended for optimal performance
+- **OS Support**: Windows, macOS, and Linux (through Electron)
 
-#### **Backend**
-- **Flask**: Web framework for the application.
-- **Ollama**: Local AI runtime and chat interface, supporting multiple models.
+## Academic Purpose
 
-#### **Frontend**
-- **Vue.js**: Framework for building the interactive user interface.
+This project demonstrates the potential of local language models for interactive narrative experiences and role-playing games. It explores technical solutions for optimizing context management, handling JSON outputs from LLMs, and creating responsive user interfaces for AI-driven applications.
 
+## Future Development
+
+Future development directions include:
+- Visual content generation integration
+- Multiplayer support
+- Export/import functionality for stories and characters
+- Support for additional rule systems beyond D&D 5E
+- Performance optimizations for lower-end hardware
+
+## License
+
+This project is academic in nature and not intended for commercial use.

@@ -73,10 +73,15 @@ export default {
       this.streaming = true;
       
       try {
-        const response = await api.getEventSource('/chat', {
-          story_name: this.storySummary.name,
-          story_details: this.storySummary,
-          message: message,
+
+        const response = await fetch('http://localhost:5000/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            story_name: this.storySummary.name,
+            message: message
+          }),
+          signal: this.abortController.signal // Pass the abort signal here
         });
         
         const reader = response.body.getReader();
@@ -84,26 +89,32 @@ export default {
         let done = false;
         
         while (!done) {
-          const { value, done: readerDone } = await reader.read();
-          done = readerDone;
-          
-          if (value) {
-            const chunk = decoder.decode(value, { stream: true });
-            const match = chunk.match(/data: (.+)\n\n/);
-            if (match) {
-              const data = JSON.parse(match[1]);
-              dmMessage.content += data.content;
-              this.conversation[this.conversation.length - 1] = {
-                role: 'DM',
-                content: dmMessage.content,
-              };
+          try {
+            const { value, done: readerDone } = await reader.read();
+            done = readerDone;
+            
+            if (value) {
+              const chunk = decoder.decode(value, { stream: true });
+              const match = chunk.match(/data: (.+)\n\n/);
+              if (match) {
+                const data = JSON.parse(match[1]);
+                dmMessage.content += data.content;
+                this.conversation[this.conversation.length - 1] = {
+                  role: 'DM',
+                  content: dmMessage.content,
+                };
+              }
             }
+          } catch (readError) {
+            console.log("Read error (likely from abort):", readError);
+            break;
           }
         }
       } catch (error) {
         if (error.name === 'AbortError') {
           console.log('Fetch aborted.');
         } else {
+          console.error('Error in sendMessage:', error);
           dmMessage.content = 'Failed to receive a response. Please try again.';
           this.conversation[this.conversation.length - 1] = dmMessage;
         }
@@ -134,11 +145,6 @@ export default {
 </script>
 
 <style scoped>
-
-
-
-
-
 #chatbox {
   max-width: 1000px;
   margin: 0 auto;
@@ -221,7 +227,7 @@ h1 {
   color: #d4af37 !important;
 }
 
-/* Input area */
+
 #input-area {
   display: flex;
   justify-content: center;
@@ -277,7 +283,7 @@ h1 {
   transform: translateY(0);
 }
 
-/* Streaming button state */
+
 #input-area button.streaming {
   background-color: #C62828;
   animation: pulse 1.5s infinite;
@@ -289,7 +295,7 @@ h1 {
   100% { opacity: 1; }
 }
 
-/* Saving overlay popup */
+
 .popup-overlay {
   position: fixed;
   top: 0;
@@ -319,7 +325,7 @@ h1 {
   font-weight: 600;
 }
 
-/* Spinner animation */
+
 .spinner {
   margin: 0 auto;
   border: 5px solid rgba(78, 52, 46, 0.3);
@@ -335,7 +341,7 @@ h1 {
   100% { transform: rotate(360deg); }
 }
 
-/* Responsive design for story component */
+
 @media (max-width: 768px) {
   #conversation {
     height: 400px;

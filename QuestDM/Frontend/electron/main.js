@@ -1,13 +1,124 @@
-// Electron main process file
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
-const path = require('node:path')
-const { spawn } = require('child_process')
-const isDev = process.env.NODE_ENV === 'development'
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const path = require('path');
+const { spawn } = require('child_process');
+const process = require('process');
+const findProcess = require('find-process');
+const kill = require('tree-kill');
 
-let mainWindow
-let flaskProcess
+const isDev = process.env.NODE_ENV === 'development';
 
-function createWindow() {
+let mainWindow;
+let pythonProcess = null;
+let serverPort = 5000;
+let pythonPath = process.platform === 'win32' ? 'python' : 'python3';
+let serverScriptPath;
+
+
+if (isDev) {
+
+  serverScriptPath = path.join(__dirname, '..', '..', 'Backend', 'app.py');
+} else {
+
+  serverScriptPath = path.join(process.resourcesPath, 'backend', 'app.py');
+}
+
+
+function startPythonServer() {
+  console.log('Starting Python Flask server...');
+  console.log(`Looking for Flask backend at: ${serverScriptPath}`);
+  console.log(`Using Python executable: ${pythonPath}`);
+  
+
+  cleanupExistingProcesses()
+    .then(() => {
+
+      pythonProcess = spawn(pythonPath, [serverScriptPath], {
+        shell: true,
+        env: process.env
+      });
+      
+
+      pythonProcess.stdout.on('data', (data) => {
+        console.log(`Python stdout: ${data}`);
+      });
+      
+      pythonProcess.stderr.on('data', (data) => {
+        console.error(`Python stderr: ${data}`);
+        
+
+        if (data.toString().includes('ENOENT') || data.toString().includes('not found')) {
+          dialog.showErrorBox(
+            'Python Not Found',
+            `QuestDM requires Python to run. Please install Python and make sure it's in your PATH.`
+          );
+        }
+      });
+      
+      pythonProcess.on('error', (error) => {
+        console.error(`Failed to start Flask process: ${error}`);
+        
+        if (error.code === 'ENOENT') {
+          dialog.showErrorBox(
+            'Python Not Found',
+            `QuestDM requires Python to run. Please install Python and make sure it's in your PATH.`
+          );
+        }
+      });
+      
+      pythonProcess.on('close', (code) => {
+        console.log(`Python server process exited with code ${code}`);
+        
+        if (code !== 0 && code !== null) {
+          dialog.showErrorBox(
+            'Backend Error',
+            `The Flask backend crashed with code ${code}. Please check the logs for details.`
+          );
+        }
+        
+        pythonProcess = null;
+      });
+      
+
+      console.log('Waiting for Flask server to start...');
+      setTimeout(() => {
+        createMainWindow();
+      }, 1000);
+    })
+    .catch((err) => {
+      console.error('Failed to clean up existing processes:', err);
+      createMainWindow();
+    });
+}
+
+
+async function cleanupExistingProcesses() {
+  try {
+    const processList = await findProcess('port', serverPort);
+    
+    if (processList.length > 0) {
+      console.log(`Found ${processList.length} existing processes on port ${serverPort}`);
+      
+      for (const proc of processList) {
+        console.log(`Killing process ${proc.pid} (${proc.name})`);
+        kill(proc.pid, 'SIGTERM', (err) => {
+          if (err) {
+            console.error(`Failed to kill process ${proc.pid}:`, err);
+          }
+        });
+      }
+      
+
+      return new Promise(resolve => setTimeout(resolve, 500));
+    }
+  } catch (e) {
+    console.error('Error finding processes:', e);
+  }
+  
+  return Promise.resolve();
+}
+
+
+function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -17,118 +128,83 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js')
     },
     icon: path.join(__dirname, 'build/icon.png')
-  })
+  });
+  
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173')  // Development: Vite dev server
+    mainWindow.loadURL('http://localhost:5173');  
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist_electron/index.html'))  // Production: Local file
+    mainWindow.loadFile(path.join(__dirname, '../dist_electron/index.html'));  
   }
   
-
   mainWindow.on('closed', () => {
-    mainWindow = null
-  })
+    mainWindow = null;
+  });
 }
 
-// Start Flask backend
-function startFlaskBackend() {
-  console.log('Starting Flask backend...')
-
-  // Adjust paths based on your project structure
-  // For development - Backend is next to Frontend
-  let flaskPath = isDev
-    ? path.join(__dirname, '..', '..', 'Backend')
-    // For production - Backend is in extraResources
-    : path.join(process.resourcesPath, 'backend')
-
-  console.log(`Looking for Flask backend at: ${flaskPath}`)
-
-  // Try to use python or python3 based on platform
-  const pythonExecutable = process.platform === 'win32' ? 'python' : 'python3'
-
-  console.log(`Using Python executable: ${pythonExecutable}`)
-
-  try {
-    // Spawn Flask process with shell option for better compatibility
-    flaskProcess = spawn(pythonExecutable, [path.join(flaskPath, 'app.py')], {
-      cwd: flaskPath,
-      shell: true,
-      env: process.env
-    })
-   
-    flaskProcess.stdout.on('data', (data) => {
-      console.log(`Flask stdout: ${data}`)
-    })
-   
-    flaskProcess.stderr.on('data', (data) => {
-      console.error(`Flask stderr: ${data}`)
-     
-      // If stderr contains ENOENT, it means Python wasn't found
-      if (data.toString().includes('ENOENT') || data.toString().includes('not found')) {
-        dialog.showErrorBox(
-          'Python Not Found',
-          `QuestDM requires Python to run. Please install Python and make sure it's in your PATH.`
-        )
-      }
-    })
-   
-    flaskProcess.on('error', (error) => {
-      console.error(`Failed to start Flask process: ${error}`)
-     
-      if (error.code === 'ENOENT') {
-        dialog.showErrorBox(
-          'Python Not Found',
-          `QuestDM requires Python to run. Please install Python and make sure it's in your PATH.`
-        )
-      }
-    })
-   
-    flaskProcess.on('close', (code) => {
-      console.log(`Flask process exited with code ${code}`)
-     
-      if (code !== 0 && code !== null) {
-        dialog.showErrorBox(
-          'Backend Error',
-          `The Flask backend crashed with code ${code}. Please check the logs for details.`
-        )
-      }
-    })
-  } catch (error) {
-    console.error('Error starting Flask backend:', error)
-    dialog.showErrorBox(
-      'Backend Error',
-      `Failed to start the Flask backend: ${error.message}`
-    )
-  }
-}
 
 app.whenReady().then(() => {
-  startFlaskBackend()
-  createWindow()
+  startPythonServer();
   
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
-  })
-})
+
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createMainWindow();
+    }
+  });
+});
+
+
+app.on('will-quit', () => {
+  cleanupPythonProcess();
+});
+
 
 app.on('window-all-closed', () => {
+
   if (process.platform !== 'darwin') {
-    if (flaskProcess) {
-      flaskProcess.kill()
-    }
-    app.quit()
+    cleanupPythonProcess();
+    app.quit();
   }
-})
+});
 
 app.on('before-quit', () => {
-  if (flaskProcess) {
-    flaskProcess.kill()
-  }
-})
+  cleanupPythonProcess();
+});
 
-// Handle IPC messages from renderer process if needed
+
+function cleanupPythonProcess() {
+  if (pythonProcess) {
+    console.log('Terminating Python Flask server...');
+    
+
+    kill(pythonProcess.pid, 'SIGTERM', (err) => {
+      if (err) {
+        console.error('Failed to kill Python process:', err);
+        
+   
+        pythonProcess.kill();
+      }
+      
+      pythonProcess = null;
+    });
+  }
+  
+
+  cleanupExistingProcesses().catch(err => {
+    console.error('Error during final cleanup:', err);
+  });
+}
+
+
 ipcMain.handle('some-action', async () => {
-  // Do something
-  return 'result'
-})
+
+  return 'result';
+});
+
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught exception:', error);
+  cleanupPythonProcess();
+  app.exit(1);
+});

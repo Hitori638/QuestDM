@@ -3,8 +3,10 @@ from flask_cors import CORS
 import ollama
 import re
 import json
-import threading
+import traceback
 from tinydb import TinyDB, Query
+import time 
+
 
 app = Flask(__name__)
 CORS(app)
@@ -26,7 +28,44 @@ StoryQuery = Query()
 
 last_story_summary = ""
 
-def construct_summary_prompt(conversation_text):
+def construct_summary_prompt(conversation_text, current_story=None):
+    """
+    Constructs a prompt for the LLM to summarize the story and update characters.
+    
+    Args:
+        conversation_text (str): The conversation history to summarize
+        current_story (dict, optional): The current story object with existing characters
+        
+    Returns:
+        list: List of prompt messages for the LLM
+    """
+    print("DEBUG: Constructing summary prompt with conversation of length:", len(conversation_text))
+    
+    existing_characters = {}
+    if current_story and 'characters' in current_story:
+        existing_characters = current_story['characters']
+        if not isinstance(existing_characters, dict):
+            if isinstance(existing_characters, list):
+                char_dict = {}
+                for char in existing_characters:
+                    if isinstance(char, dict) and 'name' in char:
+                        char_dict[char['name']] = char
+                existing_characters = char_dict
+            else:
+                existing_characters = {}
+    
+    character_context = "CURRENT CHARACTERS:\n"
+    if existing_characters:
+        for char_name, char_info in existing_characters.items():
+            if isinstance(char_info, dict):
+                char_context = f"- {char_name}:\n"
+                for key, value in char_info.items():
+                    if key != 'template_origin' and value:  
+                        char_context += f"  {key}: {value}\n"
+                character_context += char_context
+    else:
+        character_context += "No existing characters tracked.\n"
+    
     return [
         {
             "role": "system",
@@ -35,7 +74,20 @@ def construct_summary_prompt(conversation_text):
                 "Your job is to generate:\n\n"
                 "1. A comprehensive **summary** of the story so far as a simple string\n"
                 "2. An **updated character_creation dictionary** containing ANY AND ALL characters\n\n"
-                "EXTREMELY IMPORTANT: You MUST follow the exact format below - do not add new fields, do not change the structure:\n"
+                f"{character_context}\n\n"
+                "CHARACTER TRACKING INSTRUCTIONS:\n"
+                "- CRITICAL: You MUST include ALL existing characters in your output exactly as they appear in the input\n"
+                "- NEVER omit, remove, or replace existing characters, even if they don't appear in recent conversation\n"
+                "- Do not change names, race, class or any other attributes of existing characters\n"
+                "- Only add new characters or update details for existing characters if they appear in the conversation\n"
+                "- If a character was previously unnamed (e.g., 'mysterious stranger') but now has a name, "
+                "create a new entry with the proper name and include their prior details\n"
+                "- Track all characters mentioned in the story, even minor NPCs\n"
+                "- For each character, include name, race, class, backstory, and current status\n\n"
+                "CRITICAL INSTRUCTIONS FOR JSON OUTPUT:\n"
+                "- Output ONLY valid, parseable JSON with NO explanations before or after\n"
+                "- Do NOT prefix your response with ```json or any other markdown\n"
+                "- Return EXACTLY this structure with NO modifications:\n"
                 "{\n"
                 '  "summary": "A detailed summary of the story progression.",\n'
                 '  "character_creation": {\n'
@@ -48,10 +100,20 @@ def construct_summary_prompt(conversation_text):
                 "    }\n"
                 "  }\n"
                 "}\n\n"
-                "DO NOT modify this structure. DO NOT add nested objects to summary. DO NOT add nested arrays. The summary field MUST be a single string. "
-                "ALL keys in the character_creation dictionary MUST EXACTLY MATCH the corresponding 'name' field for each character. "
-                "Ensure all strings are properly escaped with no newlines inside the strings. "
-                "All JSON properties must have commas between them."
+                "STRICT FORMAT REQUIREMENTS:\n"
+                "- The 'summary' field MUST be a single string with proper escaping for quotes (\\\")\n"
+                "- Character names as keys MUST EXACTLY MATCH the corresponding 'name' field values\n"
+                "- DO NOT include newlines within strings - use spaces instead\n"
+                "- All strings MUST be properly quoted with double quotes and escaped where needed\n"
+                "- Every property except the last in each object MUST have a comma after it\n"
+                "- DO NOT add any extra fields, comments, or explanations outside the JSON structure\n"
+                "- The output should start with a { character and end with a } character\n\n"
+                "SPECIAL CHARACTER HANDLING:\n"
+                "- Avoid using apostrophes in the summary text (use 'the crews mission' instead of 'crew's mission')\n"
+                "- If you must include character nicknames with quotes, use single quotes instead of double quotes\n"
+                "- Keep character names simple in the character_creation dictionary keys (e.g., use 'Sam Johnson' instead of 'Dr. Samuel \"Sam\" Johnson')\n"
+                "- Use character full names including titles in the 'name' field, not in the dictionary key\n\n"
+                "Your output MUST be machine-parseable JSON that can be processed by json.loads() in Python."
             )
         },
         {
@@ -66,7 +128,13 @@ novel_mode_prompt = {
     "content": (
         "You are an expert storyteller and game master, dedicated to crafting an immersive, detailed, and impressive adventure for the player. "
         "Additionally, you should always stay in-character as the Dungeon Master. Do not break the immersive storytelling by providing real-life programming code, instructions to develop software, or any other out-of-character (OOC) content that is not directly related to the ongoing story. "
-        "If a user requests you to provide real-world code, or to behave as a general coding assistant, politely refuse or redirect to continue the narrative context of the game."
+        "If a user requests you to provide real-world code, or to behave as a general coding assistant, politely refuse or redirect to continue the narrative context of the game.\n\n"
+        "Memory and Continuity:\n"
+        "This story system uses periodic summarization to manage the ongoing narrative. Characters, "
+        "plot points, and world details are preserved across summarizations. If you encounter characters "
+        "or references that seem unfamiliar, they likely appeared earlier in the story. Maintain consistency "
+        "with established characters and plot elements. When in doubt about a character's details, use "
+        "natural dialogue to help reconstruct the relationship and history without breaking immersion."
     )
 }
 
@@ -100,9 +168,18 @@ dnd_mode_prompt = {
         "**Ethical & Meta Guidelines:**\n"
         "- **Stay In-Character:** Do not break immersion with out-of-game references.\n"
         "- **Keep Pacing Steady:** Balance description with game flow to maintain engagement.\n\n"
-        "Your role is to provide an engaging and authentic D&D experience by following these principles and ensuring the player's immersion and enjoyment."
+        "Your role is to provide an engaging and authentic D&D experience by following these principles and ensuring the player's immersion and enjoyment.\n\n"
+        "**Memory and Continuity Guidelines:**\n"
+        "- This story system uses periodic summarization to manage context\n"
+        "- Your responses are saved and later summarized to maintain story continuity\n"
+        "- Characters you interact with are tracked and preserved across summarizations\n"
+        "- If you encounter characters you don't recognize, they are likely from earlier parts of the story\n"
+        "- Be careful not to contradict established character details\n"
+        "- When you meet a character that seems familiar but you lack details about, use dialogue to naturally reconstruct the relationship\n"
+        "- Maintaining consistent character portrayal is essential for player immersion"
     )
 }
+
 
 def merge_conversation(existing_conversation, new_conversation):
     seen_messages = {json.dumps(msg, sort_keys=True) for msg in existing_conversation}
@@ -111,150 +188,354 @@ def merge_conversation(existing_conversation, new_conversation):
             existing_conversation.append(msg)
     return existing_conversation
 
-def merge_characters(existing_chars, new_chars):
-    if not isinstance(existing_chars, dict):
-        existing_chars = {}
-    if not isinstance(new_chars, dict):
-        new_chars = {}
-    
-    merged_characters = existing_chars.copy()
-    
-    for char_id, new_char in new_chars.items():
-        if char_id in merged_characters:
-            for key, val in new_char.items():
-                if key == 'backstory' and merged_characters[char_id].get('backstory'):
-   
-                    original_backstory = merged_characters[char_id]['backstory']
-                    if val != original_backstory and val:
-  
-                        merged_characters[char_id]['backstory'] = val
-                elif key == 'status' and val:
- 
-                    merged_characters[char_id][key] = val
-                else:
-        
-                    merged_characters[char_id][key] = val
-        else:
 
-            merged_characters[char_id] = new_char
-    
-    return merged_characters
 
 def process_summary_json(summary_text):
-    """
-    Process and extract structured data from LLM-generated summary text.
-    Handles various JSON formats and issues like escape sequences and newlines.
-    
-    Args:
-        summary_text (str): The raw summary text from the LLM.
-        
-    Returns:
-        dict: A dictionary with 'summary' and 'character_creation' keys.
-    """
    
     
+    print("\n" + "="*50)
+    print("DEBUG: Starting JSON parsing process")
+    print(f"DEBUG: Raw summary text preview: {summary_text[:150]}...")
+    print(f"DEBUG: Summary text length: {len(summary_text)} characters")
+    print("="*50 + "\n")
+
+    default_result = {
+        "summary": "Summarization failed, this doesn't happen very often, you are on your own LLM. Continue the story naturally using the limited context you have. When dealing with characters whose background you're uncertain about, use dialogue to reconstruct history - have characters say things like 'Remember what we've been through together?' or 'After all that happened in the forest, I still can't believe we made it out.' This will encourage the player to mention past events in their response, helping you rebuild the narrative context. NPCs can also ask questions like 'How did you solve that problem with the dragon again?' to prompt the player to recount important story elements while maintaining the illusion of continuity.",
+        "character_creation": {}
+    }
+    
+    def clean_text(text):
+        original_text = text
+        
+        for prefix in ["SUMMARY:", "Here's the summary:", "JSON:", "Output:"]:
+            if text.strip().startswith(prefix):
+                text = text[len(prefix):].strip()
+                print(f"DEBUG: Removed prefix: '{prefix}'")
+        
+        if "```" in text:
+            text = re.sub(r'```(?:json)?\n?([\s\S]*?)\n?```', r'\1', text)
+            print("DEBUG: Removed markdown code blocks")
+        
+        first_brace = text.find('{')
+        last_brace = text.rfind('}')
+        if first_brace != -1 and last_brace != -1:
+            text = text[first_brace:last_brace+1]
+            print(f"DEBUG: Extracted JSON between braces (chars {first_brace}-{last_brace})")
+        
+        result = text.strip()
+        if result != original_text:
+            print(f"DEBUG: Cleaned text preview: {result[:100]}...")
+        
+        return result
+
+
     try:
-        if summary_text.startswith("SUMMARY:"):
-            summary_text = summary_text[len("SUMMARY:"):].strip()
+        print("\nDEBUG: ATTEMPTING METHOD 1 - Ask LLM to fix malformed JSON")
+        start_time = time.time()
+        import ollama
         
 
-        json_match = re.search(r'({.*})', summary_text, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(1)
-        else:
-            json_str = summary_text
-        
- 
-        json_str = re.sub(r'\\+"', '"', json_str)
-
-        json_str = re.sub(r':\s*\\+([^,}\s"]+)', r':"\1"', json_str)
-
-        json_str = re.sub(r'("\s*:\s*"[^"]*)[\n\r]+\s*[\n\r]+\s*([^"]*")', r'\1 \2', json_str)
+        cleaned_text = clean_text(summary_text)
         
 
         try:
-            data = json.loads(json_str)
-            return data
-        except json.JSONDecodeError as e:
-            print(f"DEBUG: Initial JSON parsing failed: {e}")
-            
-     
-            result = {
-                "summary": "",
-                "character_creation": {}
-            }
-            
- 
-            summary_match = re.search(r'"summary"\s*:\s*"([^"]+)"', json_str)
-            if summary_match:
-                result["summary"] = summary_match.group(1)
-            
-     
-            char_section_match = re.search(r'"character_creation"\s*:\s*{(.*)}', json_str, re.DOTALL)
-            if char_section_match:
-                char_section = char_section_match.group(1)
+            data = json.loads(cleaned_text)
+            if "summary" in data and "character_creation" in data:
+                if isinstance(data["summary"], str) and isinstance(data["character_creation"], dict):
+                    print(f"DEBUG: JSON is already valid, no repair needed")
+                    print(f"DEBUG: Found summary of length: {len(data['summary'])} chars")
+                    print(f"DEBUG: Found {len(data['character_creation'])} characters")
+                    if data['character_creation']:
+                        print(f"DEBUG: Characters: {', '.join(list(data['character_creation'].keys()))}")
+                    end_time = time.time()
+                    print(f"DEBUG: Direct parsing succeeded in {end_time-start_time:.3f}s")
+                    return data
+        except json.JSONDecodeError as json_err:
+            print(f"DEBUG: JSON is invalid, attempting repair. Error: {json_err}")
+            error_position = json_err.pos
+            error_msg = str(json_err)
+            surrounding_text = cleaned_text[max(0, error_position-30):min(len(cleaned_text), error_position+30)]
+            error_details = (
+                f"Error details from Python's json parser:\n"
+                f"- Error message: {error_msg}\n"
+                f"- Error at position {error_position}\n"
+                f"- Surrounding text: '{surrounding_text}'\n"
+                f"- The ^ indicates approximately where the error occurred: "
+                f"{surrounding_text[:min(30, error_position)]}^{surrounding_text[min(30, error_position):]}\n\n"
+            )
+        except Exception as e:
+            print(f"DEBUG: Error during direct parsing: {str(e)}")
+            error_details = f"Error during parsing: {str(e)}\n\n"
+
+
+        global current_model
+        global current_context_size
+        
+
+        max_attempts = 3
+        attempt = 0
+        last_error = None
+        
+        while attempt < max_attempts:
+            attempt += 1
+            try:
+                print(f"DEBUG: LLM repair attempt {attempt}/{max_attempts}")
                 
-  
-                char_pattern = r'"([^"]+)"\s*:\s*{([^{}]*(?:{[^{}]*}[^{}]*)*?)}'
-                for char_match in re.finditer(char_pattern, char_section):
-                    char_name = char_match.group(1).replace('"', '').replace('\\', '').strip()
-                    char_content = char_match.group(2)
-                    
-              
-                    if char_name == "character_creation":
-                        continue
-                    
-                
-                    char_data = {
-                        "name": char_name,
-                        "race": "Unknown",
-                        "class": "Unknown",
-                        "backstory": "",
-                        "status": ""
+                fix_prompt = [
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a JSON repair specialist. You will be given a malformed JSON string. "
+                            "Your task is to fix this JSON and return ONLY the fixed, valid JSON with no explanation or commentary. "
+                            "The output must be properly formatted JSON that can be parsed by Python's json.loads() function. "
+                            "The JSON should contain:\n"
+                            "1. A 'summary' field (string)\n"
+                            "2. A 'character_creation' field (object) with character data\n\n"
+                            "Here is the expected JSON structure:\n"
+                            "{\n"
+                            '  "summary": "A detailed summary of the story progression.",\n'
+                            '  "character_creation": {\n'
+                            '    "CharacterName": {\n'
+                            '      "name": "CharacterName",\n'
+                            '      "race": "Race (if known, or \\"Unknown\\" if not)",\n'
+                            '      "class": "Class (if known, or \\"Unknown\\" if not)",\n'
+                            '      "backstory": "Character backstory based on available information",\n'
+                            '      "status": "Current physical/mental state and location"\n'
+                            "    },\n"
+                            '    "AnotherCharacter": {\n'
+                            '      "name": "AnotherCharacter",\n'
+                            '      "race": "Race",\n'
+                            '      "class": "Class",\n'
+                            '      "backstory": "Backstory",\n'
+                            '      "status": "Status"\n'
+                            "    }\n"
+                            "  }\n"
+                            "}\n\n"
+                            "Common issues to look for and fix:\n"
+                            "- Unquoted property names\n"
+                            "- Single quotes instead of double quotes\n"
+                            "- Trailing commas\n"
+                            "- Missing commas between properties\n"
+                            "- Unclosed brackets/braces\n"
+                            "- Unescaped quotes in strings\n"
+                            "- Missing quotes around property values\n"
+                            "- The 'summary' field MUST be a single string with proper escaping for quotes (\\\")\n"
+                            "- Character names as keys MUST EXACTLY MATCH the corresponding 'name' field values\n"
+                            "- All strings MUST be properly quoted with double quotes and escaped where needed\n"
+                        )
+                    },
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Fix this malformed JSON:\n\n{summary_text}\n\n"
+                            f"{error_details if 'error_details' in locals() else ''}"
+                            f"This is attempt {attempt} out of {max_attempts}. "
+                            "Remember to return ONLY the fixed JSON with no explanations or extra text. "
+                            "Ensure the output is valid JSON that can be parsed with json.loads(). "
+                            "Make sure all property names and string values use double quotes."
+                        )
                     }
+                ]
+                
+       
+                if attempt > 1 and last_error:
+                    fix_prompt[1]["content"] += f"\n\nPrevious attempt failed with error: {last_error}"
+                
+                print(f"DEBUG: Sending JSON repair request to model (attempt {attempt})")
+                response = ollama.chat(
+                    model=current_model,
+                    messages=fix_prompt,
+                    stream=False,
+                    options={"num_ctx": current_context_size}
+                )
+                
+                if hasattr(response, "message"):
+                    fixed_json_text = response.message.content
+                elif isinstance(response, dict):
+                    fixed_json_text = response.get("message", {}).get("content", "")
+                else:
+                    fixed_json_text = ""
+                
+                print(f"DEBUG: Received fixed JSON of length: {len(fixed_json_text)} chars")
+                print(f"DEBUG: Fixed JSON preview: {fixed_json_text[:100]}...")
+                
+                cleaned_fixed_json = clean_text(fixed_json_text)
+                data = json.loads(cleaned_fixed_json)
+                
+                if "summary" in data and "character_creation" in data:
+                    if isinstance(data["summary"], str) and isinstance(data["character_creation"], dict):
+                        end_time = time.time()
+                        print(f"DEBUG: Method 1 (LLM fix) SUCCEEDED on attempt {attempt} in {end_time-start_time:.3f}s")
+                        print(f"DEBUG: Found summary of length: {len(data['summary'])} chars")
+                        print(f"DEBUG: Found {len(data['character_creation'])} characters")
+                        if data['character_creation']:
+                            print(f"DEBUG: Characters: {', '.join(list(data['character_creation'].keys()))}")
+                        return data
+                    else:
+                        raise ValueError("Invalid data structure from LLM fix (wrong types)")
+                else:
+                    raise ValueError("Missing required fields in LLM-fixed JSON")
                     
-            
-                    prop_pattern = r'"([^"]+)"\s*:\s*"?([^",}]*)"?'
-                    for prop_match in re.finditer(prop_pattern, char_content):
-                        prop_name = prop_match.group(1).strip()
-                        prop_value = prop_match.group(2).strip()
-                        
-                  
-                        prop_value = re.sub(r'[\n\r\t]+', ' ', prop_value)
-                        prop_value = re.sub(r'\\+', '', prop_value)
-                        
-              
-                        if prop_name in ["name", "race", "class", "backstory", "status"]:
-                            char_data[prop_name] = prop_value
-                    
-          
-                    result["character_creation"][char_name] = char_data
-            
-            return result
+            except json.JSONDecodeError as json_err:
+                print(f"DEBUG: Attempt {attempt} - JSON decode error: {json_err}")
+                last_error = f"JSON decode error: {json_err}"
+                if attempt == max_attempts:
+                    print(f"DEBUG: All {max_attempts} LLM repair attempts failed with JSON decode errors")
+            except Exception as e:
+                print(f"DEBUG: Attempt {attempt} - Error: {str(e)}")
+                last_error = str(e)
+                if attempt == max_attempts:
+                    print(f"DEBUG: All {max_attempts} LLM repair attempts failed")
+        
+        print(f"DEBUG: Method 1 (LLM fix) exhausted all {max_attempts} attempts")
+        
     except Exception as e:
-        print(f"DEBUG: Error processing summary JSON: {e}")
-        return {
-            "summary": summary_text[:100] + "..." if len(summary_text) > 100 else summary_text,
-            "character_creation": {}
-        }
+        print(f"DEBUG: Method 1 (LLM fix) overall process failed: {str(e)}")
+        print(f"DEBUG: Traceback: {traceback.format_exc()}")
+    
+
+    try:
+        print("\nDEBUG: ATTEMPTING METHOD 2 - Regex extraction fallback")
+        start_time = time.time()
+        result = default_result.copy()
+        cleaned_text = clean_text(summary_text)
+        
+        print("DEBUG: Extracting summary field...")
+        summary_pattern = r'"summary"\s*:\s*"((?:\\"|[^"])*)"'
+        summary_match = re.search(summary_pattern, cleaned_text, re.DOTALL)
+        if summary_match:
+            summary = summary_match.group(1)
+            
+            summary = summary.replace('\\"', '"').replace('\\\\', '\\')
+            result["summary"] = summary
+            print(f"DEBUG: Successfully extracted summary ({len(summary)} chars)")
+        else:
+     
+            print("DEBUG: Looking for any summary-like content...")
+            summary_lines = re.findall(r'summary.*?["\']([^"\']+)["\']', summary_text, re.IGNORECASE | re.DOTALL)
+            if summary_lines:
+                result["summary"] = summary_lines[0]
+                print(f"DEBUG: Found possible summary: {summary_lines[0][:50]}...")
+            else:
+      
+                fallback_summary = summary_text[:min(200, len(summary_text))]
+                if len(summary_text) > 200:
+                    fallback_summary += "..."
+                result["summary"] = fallback_summary
+                print(f"DEBUG: Using fallback summary: {fallback_summary[:50]}...")
+        
+        print("DEBUG: Extracting character_creation section...")
+        char_section_pattern = r'"character_creation"\s*:\s*{([\s\S]*?)}'
+        char_section_match = re.search(char_section_pattern, cleaned_text, re.DOTALL)
+        
+        if char_section_match:
+            char_section = char_section_match.group(1)
+            print(f"DEBUG: Found character_creation section ({len(char_section)} chars)")
+            
+            char_pattern = r'"([^"]+)"\s*:\s*{([^{}]*)(?:{[^{}]*}[^{}]*)*?}'
+            char_matches = list(re.finditer(char_pattern, char_section))
+            print(f"DEBUG: Found {len(char_matches)} potential character entries")
+            
+            for char_match in char_matches:
+                char_name = char_match.group(1).replace('\\', '').strip()
+                char_content = char_match.group(2)
+                
+                print(f"DEBUG: Processing character: {char_name}")
+                
+                char_data = {
+                    "name": char_name,
+                    "race": "Unknown",
+                    "class": "Unknown",
+                    "backstory": "",
+                    "status": ""
+                }
+                
+                for field in ["name", "race", "class", "backstory", "status"]:
+                    field_pattern = fr'"{field}"\s*:\s*"((?:\\"|[^"])*)"'
+                    field_match = re.search(field_pattern, char_content, re.DOTALL)
+                    if field_match:
+                        value = field_match.group(1).replace('\\"', '"').replace('\\\\', '\\')
+                        char_data[field] = value
+                        print(f"DEBUG:   - Found {field}: {value[:30]}..." if len(value) > 30 else f"DEBUG:   - Found {field}: {value}")
+                
+                result["character_creation"][char_name] = char_data
+            
+            print(f"DEBUG: Successfully extracted {len(result['character_creation'])} characters")
+        else:
+            print("DEBUG: Could not find character_creation section with regex")
+            
+  
+            print("DEBUG: Looking for character names in text...")
+            char_matches = re.findall(r'(?:name|character)["\'\s:]+([A-Z][a-zA-Z\s]+)', summary_text)
+            print(f"DEBUG: Found {len(char_matches)} potential character names")
+            
+            for char_name in char_matches:
+                char_name = char_name.strip()
+                if not char_name:
+                    continue
+                
+                print(f"DEBUG: Processing potential character: {char_name}")    
+                char_data = {
+                    "name": char_name,
+                    "race": "Unknown",
+                    "class": "Unknown",
+                    "backstory": "",
+                    "status": ""
+                }
+                
+                char_vicinity = summary_text[max(0, summary_text.find(char_name)-100):
+                                          min(len(summary_text), summary_text.find(char_name)+200)]
+                
+                for field in ["race", "class"]:
+                    field_match = re.search(fr'{field}["\'\s:]+([A-Za-z]+)', char_vicinity, re.IGNORECASE)
+                    if field_match:
+                        char_data[field] = field_match.group(1)
+                        print(f"DEBUG:   - Found {field}: {field_match.group(1)}")
+                
+                result["character_creation"][char_name] = char_data
+        
+        end_time = time.time()
+        print(f"DEBUG: Method 2 (regex extraction) completed in {end_time-start_time:.3f}s")
+        print(f"DEBUG: Created summary of length: {len(result['summary'])} chars")
+        print(f"DEBUG: Extracted {len(result['character_creation'])} characters")
+        if result['character_creation']:
+            print(f"DEBUG: Characters: {', '.join(list(result['character_creation'].keys()))}")
+        
+     
+        return result
+    except Exception as e:
+        print(f"DEBUG: Method 2 (regex extraction) failed: {str(e)}")
+        print(f"DEBUG: Traceback: {traceback.format_exc()}")
+    
+
+    print("\nDEBUG: ALL PARSING METHODS FAILED, using raw text fallback")
+    default_result["summary"] = summary_text[:min(200, len(summary_text))]
+    if len(summary_text) > 200:
+        default_result["summary"] += "..."
+    
+    print("="*50)
+    print(f"DEBUG: Returning fallback summary: {default_result['summary'][:50]}...")
+    print("DEBUG: No characters extracted")
+    print("="*50 + "\n")
+    
+    return default_result
 
 def summarize_and_save(story_name, threshold=None):
     if threshold is None:
         threshold = model_accuracy_threshold
     
+    print(f"DEBUG: Starting summarization check for story '{story_name}'")
     llm_conv = llm_conversations.get(story_name, [])
     
 
+    story = story_creation_table.get(StoryQuery.name == story_name)
+    if not story:
+        print(f"DEBUG: Story '{story_name}' not found in database")
+        return llm_conv
+
     if len(llm_conv) < 3:
+        print("DEBUG: Not enough messages for summarization (< 3)")
         return llm_conv
-    
-
-    user_messages = [msg for msg in llm_conv[3:] if msg["role"] == "user"]
-    
-
-    if len(user_messages) < threshold:
-        return llm_conv
-    
 
     has_summary = (
         len(llm_conv) > 3 and
@@ -262,27 +543,58 @@ def summarize_and_save(story_name, threshold=None):
         "SUMMARY:" in llm_conv[3]["content"]
     )
     
-
-    start_index = 4 if has_summary else 3
+    print(f"DEBUG: Has existing summary: {has_summary}")
     
-
-    existing_summary = ""
     if has_summary:
+
+        messages_after_summary = llm_conv[4:]
+        user_messages_after_summary = [msg for msg in messages_after_summary if msg["role"] == "user"]
+        
+        print(f"DEBUG: Messages since last summary: {len(messages_after_summary)}")
+        print(f"DEBUG: User messages since last summary: {len(user_messages_after_summary)}")
+        
+
+        if len(user_messages_after_summary) < threshold:
+            print(f"DEBUG: Not enough new messages for re-summarization ({len(user_messages_after_summary)} < {threshold})")
+            return llm_conv
+
+        print(f"DEBUG: Threshold reached, re-summarizing {len(user_messages_after_summary)} new user messages")
+
         existing_summary = llm_conv[3]["content"].replace("SUMMARY:", "", 1).strip()
-    
+        
 
-    new_content = "\n\n".join(
-        f"{msg['role'].upper()}: {msg['content']}" for msg in llm_conv[start_index:]
-    )
-    
+        new_content = "\n\n".join(
+            f"{msg['role'].upper()}: {msg['content']}" for msg in messages_after_summary
+        )
+        
 
-    if existing_summary:
         conversation_text = f"PREVIOUS SUMMARY: {existing_summary}\n\n{new_content}"
     else:
-        conversation_text = new_content
 
-    summarization_prompt = construct_summary_prompt(conversation_text)
+        messages_to_summarize = llm_conv[3:]
+        user_messages_to_summarize = [msg for msg in messages_to_summarize if msg["role"] == "user"]
+        
+        print(f"DEBUG: Total non-system messages: {len(messages_to_summarize)}")
+        print(f"DEBUG: User messages: {len(user_messages_to_summarize)}")
+        
+
+        if len(user_messages_to_summarize) < threshold:
+            print(f"DEBUG: Not enough messages for first summarization ({len(user_messages_to_summarize)} < {threshold})")
+            return llm_conv
+            
+ 
+        print(f"DEBUG: Threshold reached, creating first summary for {len(user_messages_to_summarize)} user messages")
+        
+
+        conversation_text = "\n\n".join(
+            f"{msg['role'].upper()}: {msg['content']}" for msg in messages_to_summarize
+        )
     
+
+    print(f"DEBUG: Constructing summary prompt with conversation text of length: {len(conversation_text)}")
+    summarization_prompt = construct_summary_prompt(conversation_text, story)
+    
+    print(f"DEBUG: Sending summarization request to model: {current_model}")
     response = ollama.chat(
         model=current_model,
         messages=summarization_prompt,
@@ -298,63 +610,68 @@ def summarize_and_save(story_name, threshold=None):
     else:
         new_summary = "Failed to generate summary."
     
-    print(f"DEBUG: Raw summary response: {new_summary}")
+    print(f"DEBUG: Received raw summary response of length: {len(new_summary)}")
     
 
     processed_summary = process_summary_json(new_summary)
-
     summary_text = processed_summary.get("summary", "")
     
+    print(f"DEBUG: Extracted summary text of length: {len(summary_text)}")
 
     summary_message = {"role": "assistant", "content": f"SUMMARY: {summary_text}"}
     
 
-    recent_messages_to_keep = threshold 
+    recent_messages_to_keep = threshold
     
 
     new_llm_conv = llm_conv[:3] + [summary_message]
     
 
-    if len(llm_conv) > start_index + recent_messages_to_keep:
-        new_llm_conv += llm_conv[-(recent_messages_to_keep):]
+    if has_summary:
+
+        if len(llm_conv) > 4 + recent_messages_to_keep:
+
+            new_llm_conv += llm_conv[-(recent_messages_to_keep):]
+            print(f"DEBUG: Keeping {recent_messages_to_keep} most recent messages in the new conversation")
+        else:
+
+            new_llm_conv += llm_conv[4:]
+            print(f"DEBUG: Keeping all {len(llm_conv) - 4} messages after the existing summary")
     else:
-        new_llm_conv += llm_conv[start_index:]
+
+        if len(llm_conv) > 3 + recent_messages_to_keep:
+
+            new_llm_conv += llm_conv[-(recent_messages_to_keep):]
+            print(f"DEBUG: Keeping {recent_messages_to_keep} most recent messages for first summary")
+        else:
+
+            new_llm_conv += llm_conv[3:]
+            print(f"DEBUG: Keeping all {len(llm_conv) - 3} messages after system prompts for first summary")
+    
+    print(f"DEBUG: New conversation structure: {len(new_llm_conv)} messages total")
+    print(f"DEBUG: - System prompts: 3 messages")
+    print(f"DEBUG: - Summary: 1 message")
+    print(f"DEBUG: - Recent messages: {len(new_llm_conv) - 4} messages")
     
 
-    story = story_creation_table.get(StoryQuery.name == story_name)
-    if story:
-
-        if 'character_creation' in processed_summary and processed_summary['character_creation']:
-            existing_characters = story.get('characters', {})
-            if not isinstance(existing_characters, dict):
-                existing_characters = {}
-            
-
-            if isinstance(existing_characters, list):
-                char_dict = {}
-                for char in existing_characters:
-                    if isinstance(char, dict) and 'name' in char:
-                        char_dict[char['name']] = char
-                existing_characters = char_dict
-            
-
-            merged_characters = merge_characters(existing_characters, processed_summary['character_creation'])
-            
-
-            story_creation_table.update(
-                {'characters': merged_characters},
-                StoryQuery.name == story_name
-            )
-
+    if 'character_creation' in processed_summary and processed_summary['character_creation']:
+        print(f"DEBUG: Updating story with {len(processed_summary['character_creation'])} characters")
+        
 
         story_creation_table.update(
-            {
-                "conversation_history": conversations.get(story_name, []),
-                "llm_memory": new_llm_conv,
-                "current_summary": json.dumps(processed_summary)  
-            },
+            {'characters': processed_summary['character_creation']},
             StoryQuery.name == story_name
         )
+    
+
+    story_creation_table.update(
+        {
+            "conversation_history": conversations.get(story_name, []),
+            "llm_memory": new_llm_conv,
+            "current_summary": json.dumps(processed_summary)
+        },
+        StoryQuery.name == story_name
+    )
     
     return new_llm_conv
 
@@ -402,24 +719,33 @@ def chat():
         )
     }
     
-    characters = story.get("characters", [])
-    if isinstance(characters, dict):
-        characters = list(characters.values())
+
+    characters = story.get("characters", {})
+    if isinstance(characters, list):
+        char_dict = {}
+        for char in characters:
+            if isinstance(char, dict) and 'name' in char:
+                char_dict[char['name']] = char
+        characters = char_dict
     
     character_details = "Story Characters:\n"
-    for char in characters:
+    for char_name, char in characters.items():
         if isinstance(char, dict):
             details = f"{char.get('name', 'Unknown')} (Race: {char.get('race', 'Unknown')}, Class: {char.get('class', 'Unknown')})\n"
-            details += f"Backstory: {char.get('backstory', 'No backstory')}\n"
+            if char.get('backstory'):
+                details += f"Backstory: {char.get('backstory')}\n"
+            if char.get('status'):
+                details += f"Status: {char.get('status')}\n"
+            
+
             advanced_info = []
-            for key in char:
-                if key not in ['name', 'race', 'class', 'backstory']:
-                    advanced_info.append(f"{key}: {char[key]}")
+            for key, value in char.items():
+                if key not in ['name', 'race', 'class', 'backstory', 'status', 'template_origin'] and value:
+                    advanced_info.append(f"{key}: {value}")
             if advanced_info:
                 details += "Advanced: " + ", ".join(advanced_info) + "\n"
-            character_details += details
-        else:
-            character_details += f"{char}\n"
+            
+            character_details += details + "\n"
     
     character_prompt = {
         "role": "system",
@@ -428,16 +754,22 @@ def chat():
     
 
     if story_name in llm_conversations and llm_conversations[story_name]:
+
         llm_conversations[story_name][1] = story_details_prompt
         llm_conversations[story_name][2] = character_prompt
+        print(f"DEBUG: Using existing in-memory conversation for story '{story_name}'")
     else:
+
+        print(f"DEBUG: Loading conversation for story '{story_name}' from database")
         saved_llm_memory = story.get("llm_memory", [])
         if saved_llm_memory and len(saved_llm_memory) >= 3:
             llm_conversations[story_name] = saved_llm_memory
+
             llm_conversations[story_name][0] = initial_prompt
             llm_conversations[story_name][1] = story_details_prompt
             llm_conversations[story_name][2] = character_prompt
         else:
+
             llm_conversations[story_name] = [initial_prompt, story_details_prompt, character_prompt]
     
 
@@ -446,30 +778,86 @@ def chat():
         if not conversations[story_name]:
             conversations[story_name] = [initial_prompt, story_details_prompt, character_prompt]
     
+
     user_message = {"role": "user", "content": user_input}
     conversations[story_name].append(user_message)
     llm_conversations[story_name].append(user_message)
+    
 
+    should_summarize = False
+    if len(llm_conversations[story_name]) >= 3:
+  
+        has_summary = (
+            len(llm_conversations[story_name]) > 3 and
+            llm_conversations[story_name][3]["role"] == "assistant" and
+            "SUMMARY:" in llm_conversations[story_name][3]["content"]
+        )
+        
+        if has_summary:
+            messages_after_summary = llm_conversations[story_name][4:]
+            user_messages = [msg for msg in messages_after_summary if msg["role"] == "user"]
+            should_summarize = len(user_messages) >= model_accuracy_threshold
+            
+            print(f"DEBUG: Found existing summary sandwich structure")
+            print(f"DEBUG: User messages since last summary: {len(user_messages)}/{model_accuracy_threshold}")
+        else:
+
+            messages_after_system = llm_conversations[story_name][3:]
+            user_messages = [msg for msg in messages_after_system if msg["role"] == "user"]
+            should_summarize = len(user_messages) >= model_accuracy_threshold
+            
+            print(f"DEBUG: No existing summary found")
+            print(f"DEBUG: Total user messages: {len(user_messages)}/{model_accuracy_threshold}")
+        
+        print(f"DEBUG: Should summarize: {should_summarize}")
+    
+
+    if should_summarize:
+        print("DEBUG: Threshold reached, summarizing before generating response")
+        updated_conv = summarize_and_save(story_name)
+        
+    
+        if updated_conv:
+            llm_conversations[story_name] = updated_conv
+            print(f"DEBUG: Summarization complete, new conversation length: {len(llm_conversations[story_name])}")
+            
+   
+            story_creation_table.update(
+                {
+                    "llm_memory": llm_conversations[story_name]
+                },
+                StoryQuery.name == story_name
+            )
+        else:
+            print("DEBUG: Summarization failed or returned empty conversation")
+        
+        print("DEBUG: Proceeding with response generation")
+    
     def generate():
         print("DEBUG: Starting stream for story:", story_name)
         stream = ollama.chat(
-        model=current_model,
-        messages=llm_conversations[story_name],
-        stream=True,
-        options={"num_ctx": current_context_size})
+            model=current_model,
+            messages=llm_conversations[story_name],
+            stream=True,
+            options={"num_ctx": current_context_size}
+        )
+        
         response_accumulated = ""
         inside_think = False
         think_buffer = ""
         aborted = False
+        
         try:
             for chunk in stream:
                 content = chunk.get("message", {}).get("content", "")
                 if content:
                     response_accumulated += content
+                
                 if content.lstrip().startswith("<think>"):
                     inside_think = True
                     think_buffer = content
                     continue
+                
                 if inside_think:
                     think_buffer += content
                     if "</think>" in content:
@@ -487,6 +875,7 @@ def chat():
                                 break
                         think_buffer = ""
                     continue
+                
                 try:
                     yield f"data: {json.dumps({'content': content})}\n\n"
                 except GeneratorExit:
@@ -500,11 +889,12 @@ def chat():
             print("DEBUG: Exception in stream generator:", e)
         finally:
             if response_accumulated:
-                print("DEBUG: Saving partial response for story:", story_name)
+                print("DEBUG: Saving response for story:", story_name)
                 assistant_msg = {"role": "assistant", "content": response_accumulated}
                 conversations[story_name].append(assistant_msg)
                 llm_conversations[story_name].append(assistant_msg)
                 
+
                 story_creation_table.update(
                     {
                         "conversation_history": conversations[story_name],
@@ -512,14 +902,6 @@ def chat():
                     },
                     StoryQuery.name == story_name
                 )
-                
-                def background_tasks():
-                    updated_conv = summarize_and_save(story_name)
-                    llm_conversations[story_name] = updated_conv
-                    print("DEBUG: LLM Conversation after summarization:")
-                    print(json.dumps(llm_conversations[story_name], indent=2))
-                
-                threading.Thread(target=background_tasks).start()
                 
             print("DEBUG: Stream complete for story:", story_name)
 
