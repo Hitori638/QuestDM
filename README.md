@@ -30,24 +30,15 @@ QuestDM employs a multi-layered architecture:
 
 To get started with **QuestDM**, follow these steps:
 
-1. **Download the Latest Release**  
-   - Head to the [Releases](#) section of the project repository (replace with actual link).  
-   - Download the latest version of the application zip file for your operating system.  
-   - Extract the zip file to a desired location on your system.
-
-2. **Run the Application**  
-   - Inside the extracted folder, locate and run the `QuestDM.exe` file (Windows).  
-   - On macOS/Linux, you will need to build the application from source (see step 6).
-
-3. **Install Python**  
+1. **Install Python**  
    - Make sure you have **Python 3.11 or higher** installed.  
-   - You can download it from the official site: [https://www.python.org/downloads/](https://www.python.org/downloads/)
+   - Download it from the official site: [https://www.python.org/downloads/](https://www.python.org/downloads/)
 
-4. **Install Ollama**  
+2. **Install Ollama**  
    - Download and install Ollama from: [https://ollama.com/](https://ollama.com/)  
    - Follow the installation instructions for your OS.
 
-5. **Download at Least One LLM**  
+3. **Download at Least One LLM**  
    - After installing Ollama, run a command like the following to install a model:  
      ```
      ollama run llama3
@@ -57,13 +48,22 @@ To get started with **QuestDM**, follow these steps:
      ollama run llama3.2-vision:latest
      ```
 
+4. **Download the Latest Release**  
+   - Download the latest version of the application zip file for your operating system.  
+   - Extract the zip file to a desired location on your system.
+
+5. **Run the Application**  
+   - On **Windows**: Inside the extracted folder, locate and run the `QuestDM.exe` file.
+   - On **macOS/Linux**: You will need to build the application from source (see next step).
+
 6. **Building for macOS/Linux from Source**  
-   - If you're not using the Windows release, you'll need to build the application from source:  
-     - Clone the repository  
-     - Navigate into the project directory  
-     - Run `npm install`  
-     - Then run `npm run electron:build` to build a native version for your OS  
+   - If you're not using the Windows release, you'll need to build the application from source:
+     - Clone the repository
+     - Navigate into the project directory
+     - Run `npm install`
+     - Then run `npm run electron:build` to build a native version for your OS
    - Make sure you have **Node.js**, **npm**, and **Electron** installed before building.
+
 
 ## Requirements
 
