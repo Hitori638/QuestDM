@@ -296,7 +296,6 @@
       </div>
     </div>
 
-    <!-- Edit Character Modal -->
     <div v-if="showEditCharacterModal" id="edit-character-modal">
       <div class="modal-overlay" @click="closeModal"></div>
       <div class="modal-content">
@@ -375,7 +374,6 @@
       </div>
     </div>
 
-    <!-- Delete Confirmation Modal -->
     <div v-if="showDeleteConfirmModal" class="confirmation-modal">
       <div class="modal-overlay" @click="cancelDelete"></div>
       <div class="modal-content">
@@ -390,16 +388,13 @@
       </div>
     </div>
 
-    <!-- New Tabbed Settings Modal -->
     <div v-if="showSettingsModal" id="settings-modal">
       <div class="modal-overlay" @click="closeSettingsModal"></div>
       <div class="modal-content">
-        <!-- Tab header -->
         <div class="tabs">
           <button :class="{ active: settingsActiveTab === 'llms' }" @click="settingsActiveTab = 'llms'">LLMs</button>
           <button :class="{ active: settingsActiveTab === 'settings' }" @click="settingsActiveTab = 'settings'">Settings</button>
         </div>
-        <!-- LLMs Tab -->
         <div v-if="settingsActiveTab === 'llms'">
           <h2>LLMs</h2>
           <div class="llm-recommendation">
@@ -431,7 +426,6 @@
             </li>
           </ul>
         </div>
-        <!-- Settings Tab -->
         <div v-else-if="settingsActiveTab === 'settings'">
           <h2>Settings</h2>
           <div class="setting-item">
@@ -459,6 +453,15 @@
       </div>
     </div>
 
+    <div id="notification-container">
+      <transition-group name="notification-fade" tag="div">
+        <div v-for="notification in notifications" :key="notification.id"
+             :class="['notification', `notification-${notification.type}`]">
+          <span>{{ notification.message }}</span>
+        </div>
+      </transition-group>
+    </div>
+
   </div>
 </template>
 
@@ -470,6 +473,7 @@ export default {
   components: { StoryComponent },
   data() {
     return {
+      notifications: [],
       currentTab: 'stories',
       stories: [],
       characters: [],
@@ -550,7 +554,6 @@ export default {
       showAdvancedOptionsCreateCharacter: false,
       showAdvancedOptionsEditCharacter: false,
 
-      // DICE ROLLER PROPERTIES
       showDicePanel: false,
       presetModifier: 0,
       customDiceNotation: '',
@@ -574,12 +577,23 @@ export default {
     },
   },
   methods: {
+    showNotification(message, type = 'info', duration = 4000) {
+      const id = Date.now() + Math.random();
+      this.notifications.push({ id, message, type });
+      setTimeout(() => {
+        this.removeNotification(id);
+      }, duration);
+    },
+    removeNotification(id) {
+      this.notifications = this.notifications.filter(n => n.id !== id);
+    },
     async fetchStories() {
       try {
         const data = await api.get('/get_stories');
         this.stories = data.stories || [];
       } catch (error) {
         console.error('Error fetching stories:', error);
+        this.showNotification('Failed to fetch stories.', 'error');
       }
     },
     async fetchCharacters() {
@@ -588,16 +602,13 @@ export default {
         this.characters = data.characters || [];
       } catch (error) {
         console.error('Error fetching characters:', error);
+        this.showNotification('Failed to fetch characters.', 'error');
       }
     },
     openEditStoryModal(story) {
-  
       this.selectedStory = story;
-
-
       this.loadStory()
         .then(() => {
-
           return api.post('/load_story', { name: story.name });
         })
         .then((data) => {
@@ -617,7 +628,7 @@ export default {
         })
         .catch((err) => {
           console.error('Error fetching updated story:', err);
-          alert(`Error fetching updated story: ${err.message}`);
+          this.showNotification(`Error fetching updated story: ${err.message}`, 'error');
         });
     },
     openEditCharacterModal(character) {
@@ -725,40 +736,41 @@ export default {
       }
     },
     importCharacterToUser(charObj) {
-  api.post('/load_story', { name: this.selectedStory.name })
-    .then((data) => {
-      const story = data.story;
-      const characters = story.characters || {};
-      
-      const fullCharacter = characters[charObj.name] || {};
-      
+      api.post('/load_story', { name: this.selectedStory.name })
+        .then((data) => {
+          const story = data.story;
+          const characters = story.characters || {};
 
-      const characterData = {
-        name: fullCharacter.name || charObj.name,
-        race: fullCharacter.race || '',
-        class: fullCharacter.class || '',
-        backstory: fullCharacter.backstory || '',
-      };
-
-      const filteredData = Object.fromEntries(
-        Object.entries(characterData).filter(([_, v]) => v !== '')
-      );
+          const fullCharacter = characters[charObj.name] || {};
 
 
-      return api.post('/create_character', filteredData);
-    })
-    .then((data) => {
-      if (data.character) {
-        data.character.isLLM = false;
-        this.characters.push(data.character);
-        alert(`${data.character.name} has been added to your characters!`);
-      }
-    })
-    .catch((error) => {
-      console.error('Error importing character:', error);
-      alert(`Failed to import character: ${error.message}`);
-    });
-},
+          const characterData = {
+            name: fullCharacter.name || charObj.name,
+            race: fullCharacter.race || '',
+            class: fullCharacter.class || '',
+            backstory: fullCharacter.backstory || '',
+          };
+
+          const filteredData = Object.fromEntries(
+            Object.entries(characterData).filter(([_, v]) => v !== '')
+          );
+
+          return api.post('/create_character', filteredData);
+        })
+        .then((data) => {
+          if (data.character) {
+            data.character.isLLM = false;
+            this.characters.push(data.character);
+            this.showNotification(`${data.character.name} has been added to your characters!`, 'success');
+          } else {
+             this.showNotification(`Failed to import character: ${data.message || 'Unknown error'}`, 'error');
+          }
+        })
+        .catch((error) => {
+          console.error('Error importing character:', error);
+          this.showNotification(`Failed to import character: ${error.message}`, 'error');
+        });
+    },
     buildAssignedCharacters() {
       return this.tempAssignedCharacters.map((char) => {
         const found = this.characters.find((c) => c.name === char);
@@ -781,17 +793,18 @@ export default {
           ...this.newStory,
           characters: dict
         };
-        
+
         const data = await api.post('/create_story', payload);
-        
+
         if (!data.story) {
-          throw new Error('The created story object is missing in the response.');
+           throw new Error(data.message || 'The created story object is missing in the response.');
         }
         this.stories.push(data.story);
         this.closeModal();
+        this.showNotification(`Story "${data.story.name}" created successfully!`, 'success');
       } catch (error) {
         console.error('Error creating story:', error);
-        alert(`An error occurred while creating the story: ${error.message}`);
+        this.showNotification(`Error creating story: ${error.message}`, 'error');
       }
     },
     async saveEditedStoryData() {
@@ -808,9 +821,13 @@ export default {
           ...this.editedStory,
           characters: dict
         };
-        
+
         const updatedStory = await api.put('/edit_story', payload);
-        
+
+        if (!updatedStory || updatedStory.error) {
+             throw new Error(updatedStory.error || 'Failed to update story.');
+        }
+
         const index = this.stories.findIndex(
           (s) => s.name === this.editedStory.originalName
         );
@@ -824,8 +841,10 @@ export default {
           this.selectedStory = updatedStory;
         }
         this.closeModal();
+         this.showNotification(`Story "${updatedStory.name}" updated successfully!`, 'success');
       } catch (error) {
         console.error('Error editing story:', error);
+        this.showNotification(`Error editing story: ${error.message}`, 'error');
       }
     },
     async saveCharacterData() {
@@ -833,15 +852,24 @@ export default {
         const data = await api.post('/create_character', this.newCharacter);
         if (data.character) {
           this.characters.push(data.character);
+          this.showNotification(`Character "${data.character.name}" created successfully!`, 'success');
+        } else {
+             this.showNotification(`Failed to create character: ${data.message || 'Unknown error'}`, 'error');
         }
         this.closeModal();
       } catch (error) {
         console.error('Error creating character:', error);
+        this.showNotification(`Error creating character: ${error.message}`, 'error');
       }
     },
     async saveEditedCharacterData() {
       try {
         const updatedCharacter = await api.put('/edit_character', this.editedCharacter);
+
+         if (!updatedCharacter || updatedCharacter.error) {
+             throw new Error(updatedCharacter.error || 'Failed to update character.');
+         }
+
         const index = this.characters.findIndex(
           (c) => c.name === this.editedCharacter.originalName
         );
@@ -849,13 +877,16 @@ export default {
           this.characters.splice(index, 1, updatedCharacter);
         }
         this.closeModal();
+        this.showNotification(`Character "${updatedCharacter.name}" updated successfully!`, 'success');
       } catch (error) {
         console.error('Error editing character:', error);
+        this.showNotification(`Error editing character: ${error.message}`, 'error');
       }
     },
     async openStory(story) {
       if (!story || !story.name) {
         console.error('Invalid story passed to openStory:', story);
+        this.showNotification('Cannot open invalid story.', 'error');
         return;
       }
       this.selectedStory = story;
@@ -863,12 +894,14 @@ export default {
         await this.loadStory();
       } catch (error) {
         console.error('Error opening story:', error);
+        this.showNotification(`Error opening story: ${error.message}`, 'error');
         this.selectedStory = null;
       }
     },
     async loadStory() {
       if (!this.selectedStory || !this.selectedStory.name) {
         console.error('No story selected or story has no name.');
+         this.showNotification('No story selected to load.', 'error');
         return;
       }
       try {
@@ -876,6 +909,7 @@ export default {
         this.conversation = data.conversation || [];
       } catch (error) {
         console.error('Error loading story:', error);
+        this.showNotification(`Error loading story: ${error.message}`, 'error');
       }
     },
     openDeleteConfirmation(item, index, type) {
@@ -884,6 +918,7 @@ export default {
     },
     async confirmDelete() {
       try {
+         let deletedName = this.deleteTarget.item.name;
         if (this.deleteTarget.type === 'story') {
           await api.delete('/delete_story', { name: this.deleteTarget.item.name });
           this.stories.splice(this.deleteTarget.index, 1);
@@ -897,8 +932,10 @@ export default {
           await api.delete('/delete_character', { name: this.deleteTarget.item.name });
           this.characters.splice(this.deleteTarget.index, 1);
         }
+        this.showNotification(`${this.deleteTarget.type.charAt(0).toUpperCase() + this.deleteTarget.type.slice(1)} "${deletedName}" deleted.`, 'success');
       } catch (error) {
         console.error('Error deleting item:', error);
+         this.showNotification(`Error deleting ${this.deleteTarget.type}: ${error.message}`, 'error');
       } finally {
         this.cancelDelete();
       }
@@ -918,20 +955,22 @@ export default {
       try {
         const data = await api.get('/list_models');
         this.installedLLMs = data;
-        
+
         const modelData = await api.get('/get_model');
         this.currentLLM = modelData.model;
       } catch (error) {
         console.error('Error fetching installed LLMs:', error);
+        this.showNotification('Error fetching installed LLMs.', 'error');
       }
     },
     async useLLM(modelName) {
       try {
         const data = await api.post('/set_model', { model_name: modelName });
         this.currentLLM = data.model;
-        alert(`Model changed to ${data.model}`);
+        this.showNotification(`Model changed to ${data.model}`, 'info');
       } catch (error) {
         console.error('Error setting LLM:', error);
+        this.showNotification(`Error setting LLM: ${error.message}`, 'error');
       }
     },
     toggleDicePanel() {
@@ -987,22 +1026,25 @@ export default {
           model_accuracy: this.modelAccuracy,
           context_size: this.contextSize,
         });
-        alert(data.message || 'Settings updated!');
+        this.showNotification(data.message || 'Settings updated!', 'success');
       } catch (err) {
         console.error('Error updating settings:', err);
-        alert('Error saving settings.');
+        this.showNotification('Error saving settings.', 'error');
       }
     },
   },
   mounted() {
     this.fetchStories();
     this.fetchCharacters();
-    
+
     api.get('/get_model')
       .then((data) => {
         this.currentLLM = data.model;
       })
-      .catch((err) => console.error(err));
+      .catch((err) => {
+        console.error(err);
+        this.showNotification('Failed to get current model.', 'error');
+      });
 
     const savedModelAccuracy = localStorage.getItem('modelAccuracy');
     const savedContextSize = localStorage.getItem('contextSize');
@@ -1022,7 +1064,7 @@ body {
   margin: 0;
   padding: 0;
   color: #fff;
-  position: relative; 
+  position: relative;
   overflow-x: hidden;
   line-height: 1.6;
 }
@@ -1030,9 +1072,9 @@ body {
 body::before {
   content: "";
   position: fixed;
-  top: 0; 
+  top: 0;
   left: 0;
-  width: 100%; 
+  width: 100%;
   height: 100%;
   background: url('https://img.stablecog.com/insecure/1920w/aHR0cHM6Ly9iLnN0YWJsZWNvZy5jb20vOGQyYWM4ZDAtMzEyZC00ZDI1LWE5NWQtZDUzZDg5N2YxY2E2LmpwZWc.webp') center center / cover no-repeat;
   z-index: -1;
@@ -1040,15 +1082,15 @@ body::before {
 }
 
 
-::-webkit-scrollbar { 
-  width: 8px; 
+::-webkit-scrollbar {
+  width: 8px;
 }
-::-webkit-scrollbar-thumb { 
-  background: #8D6E63; 
-  border-radius: 10px; 
+::-webkit-scrollbar-thumb {
+  background: #8D6E63;
+  border-radius: 10px;
 }
-::-webkit-scrollbar-thumb:hover { 
-  background: #7B5E57; 
+::-webkit-scrollbar-thumb:hover {
+  background: #7B5E57;
 }
 
 
@@ -1087,7 +1129,7 @@ header h1 {
   justify-content: center;
 }
 
-.settings-btn:hover, .dice-btn:hover { 
+.settings-btn:hover, .dice-btn:hover {
   background-color: rgba(255, 255, 255, 0.1);
   transform: scale(1.1);
   color: #d4af37;
@@ -1097,15 +1139,15 @@ header h1 {
 .dice-btn { top: 20px; right: 70px; }
 
 
-#content { 
-  display: flex; 
+#content {
+  display: flex;
   height: calc(100vh - 80px);
   position: relative;
-  overflow: hidden; 
+  overflow: hidden;
 }
 
 
-#sidebar { 
+#sidebar {
   width: 280px;
   background-color: rgba(62, 39, 35, 0.95);
   padding: 15px;
@@ -1114,16 +1156,16 @@ header h1 {
   overflow-y: auto;
   position: fixed;
   left: 0;
-  top: 80px; 
+  top: 80px;
   bottom: 0;
   z-index: 5;
 }
 
 
-#main-content { 
-  margin-left: 280px; 
-  flex-grow: 1; 
-  padding: 20px; 
+#main-content {
+  margin-left: 280px;
+  flex-grow: 1;
+  padding: 20px;
   overflow-y: auto;
   position: relative;
   z-index: 1;
@@ -1137,9 +1179,9 @@ body.dice-panel-open #main-content {
 }
 
 
-#tabs { 
-  display: flex; 
-  justify-content: space-around; 
+#tabs {
+  display: flex;
+  justify-content: space-around;
   margin-bottom: 20px;
   position: sticky;
   top: 0;
@@ -1148,22 +1190,22 @@ body.dice-panel-open #main-content {
   padding-top: 10px;
 }
 
-#tabs button { 
+#tabs button {
   flex: 1;
   padding: 12px;
-  background-color: #5D4037; 
-  color: white; 
+  background-color: #5D4037;
+  color: white;
   border: none;
   border-radius: 5px;
-  cursor: pointer; 
+  cursor: pointer;
   transition: all 0.3s;
   font-weight: 600;
   letter-spacing: 0.5px;
   margin: 0 5px;
 }
 
-#tabs button:hover, 
-#tabs button:focus { 
+#tabs button:hover,
+#tabs button:focus {
   background-color: #6D4C41;
   transform: translateY(-2px);
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
@@ -1173,18 +1215,18 @@ body.dice-panel-open #main-content {
   transform: translateY(0);
 }
 
-#stories ul, 
-#characters ul { 
-  list-style: none; 
+#stories ul,
+#characters ul {
+  list-style: none;
   padding: 0;
   margin: 0;
 }
 
-#stories li, 
-#characters li { 
-  margin: 12px 0; 
-  padding: 10px; 
-  background-color: #4E342E; 
+#stories li,
+#characters li {
+  margin: 12px 0;
+  padding: 10px;
+  background-color: #4E342E;
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -1250,24 +1292,24 @@ body.dice-panel-open #main-content {
   background-color: rgba(255, 111, 97, 0.2);
 }
 
-#stories button, 
-#characters button { 
+#stories button,
+#characters button {
   width: 100%;
-  margin-top: 15px; 
-  padding: 12px; 
-  background-color: #5D4037; 
-  color: white; 
-  border: none; 
-  cursor: pointer; 
-  border-radius: 8px; 
-  transition: all 0.3s; 
+  margin-top: 15px;
+  padding: 12px;
+  background-color: #5D4037;
+  color: white;
+  border: none;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: all 0.3s;
   font-weight: 600;
   letter-spacing: 0.5px;
 }
 
-#stories button:hover, 
-#characters button:hover { 
-  background-color: #6D4C41; 
+#stories button:hover,
+#characters button:hover {
+  background-color: #6D4C41;
   transform: translateY(-2px);
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 }
@@ -1292,8 +1334,8 @@ body.dice-panel-open #chatbox {
 
 h1 {
   text-align: center;
-  font-family: 'Cinzel', serif; 
-  color: #d4af37; 
+  font-family: 'Cinzel', serif;
+  color: #d4af37;
   margin-top: 20px;
   margin-bottom: 30px;
   font-size: 32px;
@@ -1448,28 +1490,28 @@ h1 {
   transform: translateX(100%);
 }
 
-.slide-enter-active, 
+.slide-enter-active,
 .slide-leave-active {
   transition: transform 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
-#dice-panel h2 { 
+#dice-panel h2 {
   margin-top: 10px;
   margin-bottom: 20px;
-  text-align: center; 
+  text-align: center;
   color: #d4af37;
   font-size: 24px;
 }
 
-.close-dice-btn { 
-  position: absolute; 
-  top: 15px; 
-  right: 15px; 
-  background: none; 
-  border: none; 
-  font-size: 20px; 
-  color: #fff; 
-  cursor: pointer; 
+.close-dice-btn {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  background: none;
+  border: none;
+  font-size: 20px;
+  color: #fff;
+  cursor: pointer;
   transition: all 0.3s;
   width: 30px;
   height: 30px;
@@ -1499,11 +1541,11 @@ h1 {
   font-size: 18px;
 }
 
-.dice-buttons { 
-  display: grid; 
+.dice-buttons {
+  display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 10px; 
-  margin-top: 15px; 
+  gap: 10px;
+  margin-top: 15px;
 }
 
 #dice-panel button {
@@ -1517,8 +1559,8 @@ h1 {
   font-weight: 600;
 }
 
-#dice-panel button:hover { 
-  background-color: #6D4C41; 
+#dice-panel button:hover {
+  background-color: #6D4C41;
   transform: translateY(-2px);
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 }
@@ -1569,10 +1611,10 @@ h1 {
   margin: 10px 0;
 }
 
-.error-message { 
-  color: #ff6f61; 
-  font-size: 14px; 
-  margin-top: 5px; 
+.error-message {
+  color: #ff6f61;
+  font-size: 14px;
+  margin-top: 5px;
   font-weight: 500;
 }
 
@@ -1595,13 +1637,13 @@ h1 {
   z-index: 1000;
 }
 
-.modal-overlay { 
-  position: fixed; 
-  top: 0; 
-  left: 0; 
-  width: 100%; 
-  height: 100%; 
-  background: rgba(0, 0, 0, 0.7); 
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(3px);
   z-index: 1000;
 }
@@ -1624,21 +1666,21 @@ h1 {
   overflow-y: auto;
 }
 
-@keyframes fadeInScale { 
-  from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); } 
-  to { opacity: 1; transform: translate(-50%, -50%) scale(1); } 
+@keyframes fadeInScale {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
-.modal-content h2 { 
-  font-size: 24px; 
-  margin-bottom: 20px; 
-  text-align: center; 
+.modal-content h2 {
+  font-size: 24px;
+  margin-bottom: 20px;
+  text-align: center;
   color: #d4af37;
 }
 
-.modal-content label { 
-  display: block; 
-  margin-bottom: 5px; 
+.modal-content label {
+  display: block;
+  margin-bottom: 5px;
   font-size: 16px;
   font-weight: 500;
 }
@@ -1668,8 +1710,8 @@ h1 {
   box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.3);
 }
 
-.modal-content textarea { 
-  resize: vertical; 
+.modal-content textarea {
+  resize: vertical;
   min-height: 80px;
   max-height: 200px;
 }
@@ -1689,8 +1731,8 @@ h1 {
   letter-spacing: 0.5px;
 }
 
-.modal-content button:hover { 
-  background-color: #6D4C41; 
+.modal-content button:hover {
+  background-color: #6D4C41;
   transform: translateY(-2px);
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 }
@@ -1699,18 +1741,18 @@ h1 {
   transform: translateY(0);
 }
 
-.modal-content button:last-child { 
-  background-color: #3E2723; 
+.modal-content button:last-child {
+  background-color: #3E2723;
 }
 
-.modal-content button:last-child:hover { 
-  background-color: #4E342E; 
+.modal-content button:last-child:hover {
+  background-color: #4E342E;
 }
 
 
-.manage-characters-modal-content { 
-  max-width: 700px; 
-  text-align: left; 
+.manage-characters-modal-content {
+  max-width: 700px;
+  text-align: left;
   position: fixed;
   top: 50%;
   left: 50%;
@@ -1718,15 +1760,15 @@ h1 {
   width: 90%;
 }
 
-.assigned-characters, 
-.available-characters { 
-  margin: 1rem 0; 
+.assigned-characters,
+.available-characters {
+  margin: 1rem 0;
   background-color: rgba(78, 52, 46, 0.5);
   padding: 15px;
   border-radius: 8px;
 }
 
-.assigned-characters h3, 
+.assigned-characters h3,
 .available-characters h3 {
   color: #d4af37;
   margin-top: 0;
@@ -1756,16 +1798,16 @@ h1 {
   flex-grow: 1;
 }
 
-.character-card button { 
+.character-card button {
   margin: 0 0 0 10px;
   padding: 8px 10px;
   font-size: 12px;
 }
 
-.tabs { 
-  display: flex; 
-  gap: 1rem; 
-  margin-bottom: 1rem; 
+.tabs {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
   position: sticky;
   top: 0;
   background: linear-gradient(to bottom, #3d2824, #4E342E);
@@ -1775,25 +1817,25 @@ h1 {
   border-top-right-radius: 12px;
 }
 
-.tabs button { 
-  background: #5D4037; 
-  color: #fff; 
-  border: none; 
-  padding: 10px 15px; 
-  cursor: pointer; 
+.tabs button {
+  background: #5D4037;
+  color: #fff;
+  border: none;
+  padding: 10px 15px;
+  cursor: pointer;
   border-radius: 8px 8px 0 0;
   font-weight: 600;
   transition: all 0.3s;
 }
 
-.tabs button.active { 
-  background: #6D4C41; 
+.tabs button.active {
+  background: #6D4C41;
   color: #d4af37;
 }
 
-.tab-content { 
-  border-top: 1px solid #5D4037; 
-  padding-top: 1rem; 
+.tab-content {
+  border-top: 1px solid #5D4037;
+  padding-top: 1rem;
 }
 
 
@@ -1803,10 +1845,10 @@ h1 {
   max-width: 600px;
 }
 
-#settings-modal .modal-content ul { 
-  list-style: none; 
-  padding: 0; 
-  margin: 15px 0; 
+#settings-modal .modal-content ul {
+  list-style: none;
+  padding: 0;
+  margin: 15px 0;
 }
 
 #settings-modal .modal-content li {
@@ -1821,18 +1863,18 @@ h1 {
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
-#settings-modal .modal-content li.active { 
+#settings-modal .modal-content li.active {
   background: rgba(93, 64, 55, 0.9);
   border-left: 3px solid #d4af37;
 }
 
-#settings-modal .modal-content li:hover { 
+#settings-modal .modal-content li:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
 }
 
-#settings-modal .modal-content .model-info { 
-  flex-grow: 1; 
+#settings-modal .modal-content .model-info {
+  flex-grow: 1;
 }
 
 #settings-modal .modal-content .model-info p {
@@ -1852,8 +1894,8 @@ h1 {
   font-weight: 600;
 }
 
-#settings-modal .modal-content .use-btn:hover { 
-  background: #388E3C; 
+#settings-modal .modal-content .use-btn:hover {
+  background: #388E3C;
   transform: translateY(-2px);
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 }
@@ -1969,8 +2011,8 @@ h1 {
   font-weight: 600;
 }
 
-.confirmation-modal button:hover { 
-  background-color: #6D4C41; 
+.confirmation-modal button:hover {
+  background-color: #6D4C41;
   transform: translateY(-2px);
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
 }
@@ -2024,24 +2066,78 @@ h1 {
   animation: spin 1s linear infinite;
 }
 
+#notification-container {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  z-index: 2000;
+  width: 300px;
+  pointer-events: none;
+}
+
+#notification-container > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.notification {
+  background-color: rgba(62, 39, 35, 0.9);
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  border-left: 4px solid #5D4037;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  pointer-events: all;
+  width: fit-content;
+  max-width: 100%;
+  font-size: 14px;
+  transition: all 0.5s ease;
+}
+
+.notification-error {
+  background-color: rgba(198, 40, 40, 0.9); /* Dark Red */
+  border-left-color: #D32F2F;
+}
+
+.notification-success {
+  background-color: rgba(46, 125, 50, 0.9); /* Dark Green */
+  border-left-color: #388E3C;
+}
+
+.notification-info {
+  background-color: rgba(93, 64, 55, 0.9); /* Dark Brown */
+  border-left-color: #d4af37; /* Gold */
+}
+
+.notification-fade-enter-active,
+.notification-fade-leave-active {
+  transition: opacity 0.5s, transform 0.5s;
+}
+.notification-fade-enter-from,
+.notification-fade-leave-to {
+  opacity: 0;
+  transform: translateX(100%);
+}
 
 @media (max-width: 992px) {
   #sidebar {
     width: 220px;
   }
-  
+
   #main-content {
     margin-left: 220px;
   }
-  
+
   body.dice-panel-open #main-content {
     padding-right: 250px;
   }
-  
+
   #dice-panel {
     width: 250px;
   }
-  
+
   body.dice-panel-open #chatbox {
     padding-right: 250px;
   }
@@ -2051,7 +2147,7 @@ h1 {
   #content {
     flex-direction: column;
   }
-  
+
   #sidebar {
     position: relative;
     width: 100%;
@@ -2059,30 +2155,41 @@ h1 {
     height: auto;
     max-height: 30vh;
   }
-  
+
   #main-content {
     margin-left: 0;
     height: auto;
   }
-  
+
   body.dice-panel-open #main-content {
     padding-right: 0;
   }
-  
+
   body.dice-panel-open #chatbox {
     padding-right: 0;
   }
-  
+
   #dice-panel {
     width: 100%;
     height: 50vh;
   }
-  
+
   .modal-content,
   .manage-characters-modal-content,
   .confirmation-modal .modal-content {
     width: 95%;
     max-height: 85vh;
+  }
+
+  #notification-container {
+      top: 10px;
+      right: 10px;
+      width: calc(100% - 20px);
+  }
+
+  .notification {
+      width: 100%;
+      box-sizing: border-box;
   }
 }
 </style>

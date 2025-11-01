@@ -20,7 +20,7 @@ current_context_size = 4096
 conversations = {} 
 llm_conversations = {}  
 
-db = TinyDB('stories.json')
+db = TinyDB('stories.json',encoding='utf-8', ensure_ascii=False)
 stories_table = db.table('stories')
 character_creation_table = db.table('character_creation')
 story_creation_table = db.table('story_creation')
